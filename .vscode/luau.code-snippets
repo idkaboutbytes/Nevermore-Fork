@@ -1,0 +1,88 @@
+{
+	"Loader bootstrap": {
+		"scope": "luau,lua",
+		"prefix": "loader",
+		"description": "Relative-require loader bootstrap — add a `../` per level of nesting (Nevermore-Fork CLAUDE.md)",
+		"body": [
+			"const require = require(\"${1:..}/Loader\").load()",
+			"",
+			"$0"
+		]
+	},
+
+	"Util package": {
+		"scope": "luau,lua",
+		"prefix": "util",
+		"description": "Stateless util module in the fork style (const, @util, camelCase, @checked)",
+		"body": [
+			"--!strict",
+			"--[=[",
+			"\t@util ${1}Util",
+			"]=]",
+			"",
+			"const require = require(\"${2:..}/Loader\").load()",
+			"",
+			"const ${1}Util = {}",
+			"",
+			"--[=[",
+			"\t${3:Does something}",
+			"",
+			"\t@within ${1}Util",
+			"]=]",
+			"@checked",
+			"function ${1}Util.${4:someMethod}()",
+			"\t$0",
+			"end",
+			"",
+			"return ${1}Util",
+			""
+		]
+	},
+
+	"Class package": {
+		"scope": "luau,lua",
+		"prefix": "class",
+		"description": "OOP class in the fork style (const, @class, ClassType, .new top / .Destroy bottom, dot-with-typed-self)",
+		"body": [
+			"--!strict",
+			"--[=[",
+			"\t@class ${1:SomeClass}",
+			"]=]",
+			"",
+			"const require = require(\"${2:..}/Loader\").load()",
+			"",
+			"--> Dependencies",
+			"const Maid = require(\"Maid\")",
+			"",
+			"const $1 = {}",
+			"$1.ClassName = \"$1\"",
+			"$1.__index = $1",
+			"",
+			"export type ClassType = typeof(setmetatable(",
+			"\t{} :: {",
+			"\t\t_maid: Maid.Maid,",
+			"\t},",
+			"\t$1",
+			"))",
+			"",
+			"function $1.new(): ClassType",
+			"\tlocal self = setmetatable({}, $1)",
+			"\tself._maid = Maid.new()",
+			"",
+			"\t$0",
+			"",
+			"\treturn self",
+			"end",
+			"",
+			"function $1.Destroy(self: ClassType)",
+			"\tself._maid:DoCleaning()",
+			"",
+			"\ttable.clear(self)",
+			"\tsetmetatable(self, nil)",
+			"end",
+			"",
+			"return $1",
+			""
+		]
+	}
+}
