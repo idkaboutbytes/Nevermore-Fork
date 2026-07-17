@@ -23,12 +23,7 @@ const APPLY_DEVICE_BLOCK = false
 const DISPLAY_REASON = "You have been banned from this experience."
 const PRIVATE_REASON = "Banned by an experience moderator."
 
-type BanHistoryEntry = {
-	Ban: boolean,
-	Duration: number,
-	PlaceId: number,
-	StartTime: string,
-}
+type BanHistoryEntry = BanServiceUtils.BanHistoryEntry
 
 const BanService = {}
 BanService.ServiceName = "BanService"
@@ -57,7 +52,7 @@ function BanService.Init(self: BanService, serviceBag: ServiceBag.ServiceBag)
 	self._cmdrService:RegisterCommand({
 		Name = "ban-permenantly",
 		Description = "Permanently bans a player.",
-		Group = "Admin",
+		Group = "DefaultAdmin",
 		Args = {
 			{
 				Type = "player",
@@ -66,7 +61,7 @@ function BanService.Init(self: BanService, serviceBag: ServiceBag.ServiceBag)
 			},
 		},
 		Run = function(_, target: Player)
-			const success, resultOrError = self:BanPermenantlyAsync(target):Yield()
+			const success, resultOrError = self:BanPermanentlyAsync(target):Yield()
 			if not success then
 				error(resultOrError)
 			end
@@ -78,7 +73,7 @@ function BanService.Init(self: BanService, serviceBag: ServiceBag.ServiceBag)
 	self._cmdrService:RegisterCommand({
 		Name = "ban-duration",
 		Description = "Bans a player for a number of seconds.",
-		Group = "Admin",
+		Group = "DefaultAdmin",
 		Args = {
 			{
 				Type = "player",
@@ -127,6 +122,32 @@ end
 function BanService.BanPermanentlyAsync(self: BanService, player: Player): Promise.Promise<()>
 	assert(t.instanceIsA("Player")(player), "Bad player")
 	return self:_banAsync(player, PERMANENT_DURATION)
+end
+
+--[=[
+	Unbans a player across the entire experience universe.
+
+	@within BanService
+	@param player Player
+	@return Promise<()>
+]=]
+function BanService.UnbanAsync(self: BanService, player: Player): Promise.Promise<()>
+	assert(t.instanceIsA("Player")(player), "Bad player")
+
+	return self._maid:GivePromise(Promise.new(function(resolve, reject)
+		const success, resultOrError = (pcall :: any)(function()
+			Players:UnbanAsync({
+				UserIds = { player.UserId },
+				ApplyToUniverse = APPLY_TO_UNIVERSE,
+			})
+		end)
+
+		if success then
+			resolve()
+		else
+			reject(resultOrError)
+		end
+	end))
 end
 
 --[=[
