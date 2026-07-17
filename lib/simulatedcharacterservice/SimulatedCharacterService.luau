@@ -8,6 +8,7 @@
 	@class SimulatedCharacterService
 ]=]
 
+const CollectionService = game:GetService("CollectionService")
 const RunService = game:GetService("RunService")
 
 const require = require("../Loader").load()
@@ -35,6 +36,7 @@ export type SimulatedCharacterService = typeof(setmetatable(
 		_timeSyncService: TimeSyncService.TimeSyncService,
 		_clock: TimeSyncService.SyncedClock,
 		_templateProvider: any,
+		_templateContainer: Folder?,
 		_definitions: { [string]: SimulatedCharacterTypes.ResolvedCharacterDefinition },
 		_charactersById: { [number]: SimulatedCharacter.SimulatedCharacter },
 		_characters: { SimulatedCharacter.SimulatedCharacter },
@@ -55,6 +57,7 @@ function SimulatedCharacterService.Init(self: SimulatedCharacterService, service
 	self._characters = {}
 	self._nextCharacterId = 1
 	self._navigation = nil
+	self._templateContainer = nil
 	self._simulationAccumulator = 0
 	self._snapshotAccumulator = 0
 	self._timeSyncService = self._serviceBag:GetService(TimeSyncService)
@@ -67,6 +70,40 @@ function SimulatedCharacterService.Init(self: SimulatedCharacterService, service
 		end
 		return self:_getInitialState()
 	end)
+end
+
+--[=[
+	Points the service at an external replicated Folder containing character
+	templates. The folder is tagged so the server and every client configure the
+	same TemplateProvider automatically.
+
+	The Folder should normally live in ReplicatedStorage. TemplateProvider hides
+	the real models on the server and leaves only lightweight tombstones visible
+	to clients until a model is requested.
+
+	@within SimulatedCharacterService
+	@param container Folder
+]=]
+function SimulatedCharacterService.SetTemplateContainer(self: SimulatedCharacterService, container: Folder)
+	assert(typeof(container) == "Instance" and container:IsA("Folder"), "Bad container")
+	if self._templateContainer == container then
+		return
+	end
+
+	self._maid._templateContainerTag = nil
+	self._templateContainer = container
+	const wasTagged = CollectionService:HasTag(container, SimulatedCharacterConstants.TEMPLATE_CONTAINER_TAG)
+	if not wasTagged then
+		CollectionService:AddTag(container, SimulatedCharacterConstants.TEMPLATE_CONTAINER_TAG)
+	end
+
+	self._maid._templateContainerTag = function()
+		if
+			not wasTagged and CollectionService:HasTag(container, SimulatedCharacterConstants.TEMPLATE_CONTAINER_TAG)
+		then
+			CollectionService:RemoveTag(container, SimulatedCharacterConstants.TEMPLATE_CONTAINER_TAG)
+		end
+	end
 end
 
 function SimulatedCharacterService.Start(self: SimulatedCharacterService)

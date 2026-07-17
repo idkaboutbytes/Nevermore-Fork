@@ -23,6 +23,7 @@ SimulatedCharacterConstants.DEFAULT_FLOW_FIELD_REFRESH = 0.25
 SimulatedCharacterConstants.DEFAULT_FLOW_FIELD_PRUNE_INTERVAL = 5
 SimulatedCharacterConstants.DEFAULT_FLOW_FIELD_LIFETIME = 10
 SimulatedCharacterConstants.DEFAULT_OBSTACLE_TAG = "SimulatedCharacterObstacle"
+SimulatedCharacterConstants.TEMPLATE_CONTAINER_TAG = "SimulatedCharacterTemplateContainer"
 
 SimulatedCharacterConstants.DEFAULT_MOVE_SPEED = 12
 SimulatedCharacterConstants.DEFAULT_TURN_SPEED = math.rad(360)

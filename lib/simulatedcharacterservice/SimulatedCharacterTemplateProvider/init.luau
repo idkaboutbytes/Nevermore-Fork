@@ -2,14 +2,15 @@
 --[=[
 	Provides the client-rendered models used by SimulatedCharacterService.
 
-	Place character Model templates beneath this ModuleScript or add template
-	containers at runtime through TemplateProvider.AddTemplates.
+	Template containers are discovered through the shared CollectionService tag
+	owned by SimulatedCharacterConstants.
 
 	@class SimulatedCharacterTemplateProvider
 ]=]
 
 const require = require("../Loader").load()
 
-const TemplateProvider = require("TemplateProvider")
+const SimulatedCharacterConstants = require("SimulatedCharacterConstants")
+const TaggedTemplateProvider = require("TaggedTemplateProvider")
 
-return TemplateProvider.new(script.Name, script)
+return TaggedTemplateProvider.new(script.Name, SimulatedCharacterConstants.TEMPLATE_CONTAINER_TAG)

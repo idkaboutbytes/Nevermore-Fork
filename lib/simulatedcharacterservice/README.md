@@ -25,10 +25,33 @@ does not perform NPC-to-NPC avoidance.
 
 ## Templates
 
-In Studio, place each NPC `Model` under the
-`SimulatedCharacterTemplateProvider` module. Give the model a `PrimaryPart` or a
-part named `HumanoidRootPart`. The provider preserves the server template and
-replicates it on demand when a nearby client first needs it.
+Keep game-specific models outside the package. Create a Folder in your game's
+asset hierarchy and point the service at it during server initialization:
+
+```text
+ReplicatedStorage
+└── Assets
+    └── SimulatedCharacters
+        ├── Zombie
+        └── Skeleton
+```
+
+```luau
+const ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+simulatedCharacters:SetTemplateContainer(
+	ReplicatedStorage:WaitForChild("Assets"):WaitForChild("SimulatedCharacters")
+)
+```
+
+The selected Folder receives the `SimulatedCharacterTemplateContainer`
+CollectionService tag. The shared tagged provider therefore discovers the same
+container on the server and clients. On the server, TemplateProvider moves the
+real models beneath its non-replicating `Camera` and leaves lightweight
+tombstones in the Folder. Clients download a model only when they need to render
+it.
+
+Give each model a `PrimaryPart` or a part named `HumanoidRootPart`.
 
 A template may contain a normal Roblox `Animate` hierarchy. The service reads
 its idle and walk animation objects, disables the cloned `LocalScript`, and
