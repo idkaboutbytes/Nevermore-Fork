@@ -22,6 +22,7 @@ const SimulatedCharacterConstants = require("SimulatedCharacterConstants")
 const SimulatedCharacterFlocking = require("SimulatedCharacterFlocking")
 const SimulatedCharacterNavigationGrid = require("SimulatedCharacterNavigationGrid")
 const SimulatedCharacterNetwork = require("SimulatedCharacterNetwork")
+const SimulatedCharacterStateCodec = require("SimulatedCharacterStateCodec")
 const SimulatedCharacterTemplateProvider = require("SimulatedCharacterTemplateProvider")
 const SimulatedCharacterTargetingMode = require("SimulatedCharacterTargetingMode")
 const SimulatedCharacterTypes = require("SimulatedCharacterTypes")
@@ -454,9 +455,12 @@ function SimulatedCharacterService._sendSnapshot(self: SimulatedCharacterService
 		end
 
 		if #states > 0 then
+			const originX, originZ, data = SimulatedCharacterStateCodec.encode(states)
 			SimulatedCharacterNetwork.packets.snapshot.sendTo({
 				serverTime = serverTime,
-				characters = states,
+				originX = originX,
+				originZ = originZ,
+				data = data,
 			}, player)
 		end
 	end

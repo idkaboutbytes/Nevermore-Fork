@@ -182,6 +182,18 @@ export type NetworkState = {
 	stateStartedAt: number,
 }
 
+export type NetworkMotionState = {
+	id: number,
+	x: number,
+	z: number,
+	height: number,
+	yaw: number,
+	velocityX: number,
+	velocityZ: number,
+	verticalVelocity: number,
+	mode: number,
+}
+
 export type NetworkDefinition = {
 	name: string,
 	templateName: string,
@@ -204,7 +216,9 @@ export type NetworkSpawn = {
 
 export type NetworkSnapshot = {
 	serverTime: number,
-	characters: { NetworkState },
+	originX: number,
+	originZ: number,
+	data: buffer,
 }
 
 export type NetworkSimulationRate = {

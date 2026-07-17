@@ -33,6 +33,7 @@ export type SimulatedCharacterClient = typeof(setmetatable(
 		_currentState: SimulatedCharacterTypes.NetworkState,
 		_previousTime: number,
 		_currentTime: number,
+		_lifecycleTime: number,
 		_simulationRate: number,
 		_renderCFrame: CFrame,
 		_modelPivotOffset: CFrame,
@@ -67,6 +68,7 @@ function SimulatedCharacterClient.new(
 	self._currentState = state
 	self._previousTime = spawn.serverTime
 	self._currentTime = spawn.serverTime
+	self._lifecycleTime = spawn.serverTime
 	self._simulationRate = spawn.definition.simulationRate or 1
 	self._renderCFrame = SimulatedCharacterUtils.toCFrame(state.x, state.z, state.groundY, state.height, state.yaw)
 	self._modelPivotOffset = CFrame.identity
@@ -151,17 +153,64 @@ end
 function SimulatedCharacterClient._pushState(
 	self: SimulatedCharacterClient,
 	state: SimulatedCharacterTypes.NetworkState,
-	serverTime: number
+	serverTime: number,
+	mergeLifecycleWhenOlder: boolean?
 )
-	if self._destroyed or state.id ~= self._id or serverTime < self._currentTime then
+	if self._destroyed or state.id ~= self._id then
+		return
+	end
+	if serverTime < self._currentTime then
+		if not mergeLifecycleWhenOlder or serverTime < self._lifecycleTime then
+			return
+		end
+		self._lifecycleTime = serverTime
+		const current = self._currentState
+		const previous = self._previousState
+		current.groundY = state.groundY
+		current.mode = state.mode
+		current.stateStartedAt = state.stateStartedAt
+		previous.groundY = state.groundY
+		previous.mode = state.mode
+		previous.stateStartedAt = state.stateStartedAt
+		if self._model and self._ragdolled ~= (state.mode == SimulatedCharacterConstants.Modes.RAGDOLL) then
+			self:_setModelRagdolled(state.mode == SimulatedCharacterConstants.Modes.RAGDOLL)
+		end
 		return
 	end
 
+	self._lifecycleTime = math.max(self._lifecycleTime, serverTime)
 	self._previousState = self._currentState
 	self._previousTime = self._currentTime
 	self._currentState = table.clone(state)
 	self._currentTime = serverTime
 
+	if self._model and self._ragdolled ~= (state.mode == SimulatedCharacterConstants.Modes.RAGDOLL) then
+		self:_setModelRagdolled(state.mode == SimulatedCharacterConstants.Modes.RAGDOLL)
+	end
+end
+
+function SimulatedCharacterClient._pushMotion(
+	self: SimulatedCharacterClient,
+	motion: SimulatedCharacterTypes.NetworkMotionState,
+	serverTime: number
+)
+	if self._destroyed or motion.id ~= self._id or serverTime < self._currentTime then
+		return
+	end
+
+	const state = table.clone(self._currentState)
+	state.x = motion.x
+	state.z = motion.z
+	state.height = motion.height
+	state.yaw = motion.yaw
+	state.velocityX = motion.velocityX
+	state.velocityZ = motion.velocityZ
+	state.verticalVelocity = motion.verticalVelocity
+	state.mode = motion.mode
+	self._previousState = self._currentState
+	self._previousTime = self._currentTime
+	self._currentState = state
+	self._currentTime = serverTime
 	if self._model and self._ragdolled ~= (state.mode == SimulatedCharacterConstants.Modes.RAGDOLL) then
 		self:_setModelRagdolled(state.mode == SimulatedCharacterConstants.Modes.RAGDOLL)
 	end

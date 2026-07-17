@@ -20,6 +20,7 @@ const ServiceBag = require("ServiceBag")
 const SimulatedCharacterClient = require("SimulatedCharacterClient")
 const SimulatedCharacterConstants = require("SimulatedCharacterConstants")
 const SimulatedCharacterNetwork = require("SimulatedCharacterNetwork")
+const SimulatedCharacterStateCodec = require("SimulatedCharacterStateCodec")
 const SimulatedCharacterTemplateProvider = require("SimulatedCharacterTemplateProvider")
 const SimulatedCharacterTypes = require("SimulatedCharacterTypes")
 const TableUtils = require("TableUtils")
@@ -29,6 +30,11 @@ const DEBUG_REQUEST_INTERVAL = 0.2
 
 type PendingState = {
 	state: SimulatedCharacterTypes.NetworkState,
+	serverTime: number,
+}
+
+type PendingMotion = {
+	motion: SimulatedCharacterTypes.NetworkMotionState,
 	serverTime: number,
 }
 
@@ -46,6 +52,7 @@ export type SimulatedCharacterServiceClient = typeof(setmetatable(
 		_charactersById: { [number]: SimulatedCharacterClient.SimulatedCharacterClient },
 		_renderCharacters: { SimulatedCharacterClient.SimulatedCharacterClient },
 		_pendingStatesById: { [number]: PendingState },
+		_pendingMotionsById: { [number]: PendingMotion },
 		_pendingSimulationRatesById: { [number]: number },
 		_removedIds: { [number]: boolean },
 		_modelPool: { [string]: { Model } },
@@ -67,6 +74,7 @@ function SimulatedCharacterServiceClient.Init(self: SimulatedCharacterServiceCli
 	self._charactersById = {}
 	self._renderCharacters = {}
 	self._pendingStatesById = {}
+	self._pendingMotionsById = {}
 	self._pendingSimulationRatesById = {}
 	self._removedIds = {}
 	self._modelPool = {}
@@ -100,8 +108,9 @@ function SimulatedCharacterServiceClient.Init(self: SimulatedCharacterServiceCli
 		self:_handleState(data.state, data.serverTime)
 	end)
 	SimulatedCharacterNetwork.packets.snapshot.listen(function(snapshot: SimulatedCharacterTypes.NetworkSnapshot)
-		for _, state in snapshot.characters do
-			self:_handleState(state, snapshot.serverTime)
+		const motions = SimulatedCharacterStateCodec.decode(snapshot.originX, snapshot.originZ, snapshot.data)
+		for _, motion in motions do
+			self:_handleMotion(motion, snapshot.serverTime)
 		end
 	end)
 	SimulatedCharacterNetwork.packets.debugSnapshot.listen(
@@ -270,7 +279,12 @@ function SimulatedCharacterServiceClient._handleSpawn(
 	const pendingState = self._pendingStatesById[spawn.state.id]
 	if pendingState then
 		self._pendingStatesById[spawn.state.id] = nil
-		character:_pushState(pendingState.state, pendingState.serverTime)
+		character:_pushState(pendingState.state, pendingState.serverTime, true)
+	end
+	const pendingMotion = self._pendingMotionsById[spawn.state.id]
+	if pendingMotion then
+		self._pendingMotionsById[spawn.state.id] = nil
+		character:_pushMotion(pendingMotion.motion, pendingMotion.serverTime)
 	end
 end
 
@@ -285,12 +299,35 @@ function SimulatedCharacterServiceClient._handleState(
 
 	const character = self._charactersById[state.id]
 	if character then
-		character:_pushState(state, serverTime)
+		character:_pushState(state, serverTime, true)
 	else
 		const existing = self._pendingStatesById[state.id]
 		if not existing or serverTime >= existing.serverTime then
 			self._pendingStatesById[state.id] = {
 				state = table.clone(state),
+				serverTime = serverTime,
+			}
+		end
+	end
+end
+
+function SimulatedCharacterServiceClient._handleMotion(
+	self: SimulatedCharacterServiceClient,
+	motion: SimulatedCharacterTypes.NetworkMotionState,
+	serverTime: number
+)
+	if self._destroyed or self._removedIds[motion.id] then
+		return
+	end
+
+	const character = self._charactersById[motion.id]
+	if character then
+		character:_pushMotion(motion, serverTime)
+	else
+		const existing = self._pendingMotionsById[motion.id]
+		if not existing or serverTime >= existing.serverTime then
+			self._pendingMotionsById[motion.id] = {
+				motion = table.clone(motion),
 				serverTime = serverTime,
 			}
 		end
@@ -321,6 +358,7 @@ function SimulatedCharacterServiceClient._handleRemove(self: SimulatedCharacterS
 
 	self._removedIds[id] = true
 	self._pendingStatesById[id] = nil
+	self._pendingMotionsById[id] = nil
 	self._pendingSimulationRatesById[id] = nil
 	const character = self._charactersById[id]
 	if character then
@@ -426,6 +464,7 @@ function SimulatedCharacterServiceClient.Destroy(self: SimulatedCharacterService
 	table.clear(self._charactersById)
 	table.clear(self._renderCharacters)
 	table.clear(self._pendingStatesById)
+	table.clear(self._pendingMotionsById)
 	table.clear(self._pendingSimulationRatesById)
 	for _, pool in self._modelPool do
 		for _, model in pool do

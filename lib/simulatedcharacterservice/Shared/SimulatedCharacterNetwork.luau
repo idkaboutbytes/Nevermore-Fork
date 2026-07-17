@@ -101,7 +101,9 @@ return TableUtils.deepReadonly(ByteNet.defineNamespace("SimulatedCharacters", fu
 				reliabilityType = "unreliable",
 				value = ByteNet.struct({
 					serverTime = ByteNet.float64,
-					characters = ByteNet.array(state),
+					originX = ByteNet.float32,
+					originZ = ByteNet.float32,
+					data = ByteNet.buff,
 				}),
 			}),
 		},

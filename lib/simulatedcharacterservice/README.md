@@ -309,6 +309,17 @@ and include `Physics.HitboxRadius`. When an NPC leaves range, the server sends
 one final reliable state so the client cannot leave a stale model visible, then
 stops updates until the NPC enters range again.
 
+The 10 Hz movement stream uses a custom ByteNet buffer instead of repeating the
+full lifecycle struct. X/Z positions, planar velocity, physical height, and
+vertical velocity use 1/32-stud fixed point; yaw uses a uint16 turn. A normal
+kinematic record is 15 bytes and a knockback or ragdoll record is 19 bytes,
+compared with 45 bytes for the previous full-state record. Each packet chooses
+its own X/Z origin, allowing positions in a roughly 2048-stud span to stay
+compact anywhere in the world. An outlying position automatically falls back
+to float32 for that record. Extreme velocity or height values also fall back to
+float32 instead of being clamped. Reliable spawn, teleport, mode transition,
+and out-of-range correction packets retain full state.
+
 ## Debug drawing
 
 Toggle local debug drawing through the client service:
