@@ -19,6 +19,7 @@ const Promise = require("Promise")
 const Squash = require("Squash")
 const TableUtils = require("TableUtils")
 const AttributeUtils = require("AttributeUtils")
+const ProfileData = require("ProfileData")
 const DataServiceNetwork = require("DataServiceNetwork")
 const DataServiceUtils = require("DataServiceUtils")
 
@@ -37,7 +38,6 @@ export type DataService = typeof(setmetatable(
 		_hiddenKeys: ObservableSet.ObservableSet<string>,
 		_profileList: ObservableMap.ObservableMap<Player, ProfileStore.Profile<any>>,
 		_customReplicators: ObservableMap.ObservableMap<string, () -> ()>,
-		_profileDataPromise: Promise.Promise<any>,
 
 		DataStore: ProfileStore.ProfileStore<any>,
 	},
@@ -53,23 +53,32 @@ function DataService.Init(self: DataService, serviceBag: ServiceBag.ServiceBag)
 	self._hiddenKeys = self._maid:Add(ObservableSet.new())
 	self._profileList = self._maid:Add(ObservableMap.new())
 	self._customReplicators = self._maid:Add(ObservableMap.new())
-	self._profileDataPromise = self._maid:GivePromise(Promise.new())
 
-	self.DataStore = ProfileStore.New(self:GetStoreNameAndVersion())
+	-- The template has to reach ProfileStore.New: both Reconcile and new-profile
+	-- creation read it back off the store, so a store built without one hands out
+	-- empty data the schema cannot serialize. Copied because ProfileData is
+	-- readonly and ProfileStore takes ownership of the table.
+	self.DataStore = ProfileStore.New(self:GetStoreNameAndVersion(), TableUtils.deepCopy(ProfileData.Template))
 end
 
 function DataService.Start(self: DataService)
+	-- Swapped before the subscription below, which starts loading profiles the
+	-- moment it runs -- any player already present would otherwise load against
+	-- the live store and only then get moved onto the mock
+	if RunService:IsStudio() then
+		warn(`[DataService] - Using Mock DataStore`)
+		self.DataStore = self.DataStore.Mock :: any
+	end
+
 	self._maid:Add(RxPlayerUtils.observePlayersBrio():Subscribe(function(brio)
 		const maid, player = brio:ToMaidAndValue()
 
 		maid:GivePromise(self:LoadProfileAsync(player))
 			:Then(function(profile: ProfileStore.Profile<any>)
-				const profileData = self._profileDataPromise:Wait()
-
 				const hiddenKeys = self._hiddenKeys:GetList()
 
 				const cursor = Squash.cursor()
-				profileData.Schema.ser(cursor, DataServiceUtils.getReplicatedData(profile.Data, hiddenKeys))
+				ProfileData.Schema.ser(cursor, DataServiceUtils.getReplicatedData(profile.Data, hiddenKeys))
 				DataServiceNetwork.packets.profileLoaded.sendTo({
 					data = Squash.tobuffer(cursor),
 					hiddenKeys = hiddenKeys,
@@ -83,25 +92,6 @@ function DataService.Start(self: DataService)
 				warn(`[DataService] - Promise failed during profile loading for {player.UserId} ({...})`)
 			end)
 	end))
-
-	if RunService:IsStudio() then
-		warn(`[DataService] - Using Mock DataStore`)
-		self.DataStore = self.DataStore.Mock :: any
-	end
-end
-
---[=[
-	Sets the ProfileData schema (This HAS to be done, or else data will not be sent)
-
-	@within DataService
-	@param schema table
-]=]
-function DataService.SetSchema(self: DataService, schema: { [any]: any })
-	if self._profileDataPromise:IsFulfilled() then
-		return
-	end
-
-	self._profileDataPromise:Resolve(schema)
 end
 
 --[=[

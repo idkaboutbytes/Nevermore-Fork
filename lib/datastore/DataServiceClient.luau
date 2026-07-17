@@ -20,6 +20,7 @@ const t = require("t")
 const Promise = require("Promise")
 const Squash = require("Squash")
 const TableUtils = require("TableUtils")
+const ProfileData = require("ProfileData")
 const DataServiceNetwork = require("DataServiceNetwork")
 const DataServiceUtils = require("DataServiceUtils")
 
@@ -33,7 +34,6 @@ export type DataServiceClient = typeof(setmetatable(
 
 		_data: ObservableMap.ObservableMap<string, any>,
 		_dataPromise: Promise.Promise<any>,
-		_profileDataPromise: Promise.Promise<any>,
 	},
 	{} :: typeof({ __index = DataServiceClient })
 ))
@@ -45,51 +45,34 @@ function DataServiceClient.Init(self: DataServiceClient, serviceBag: ServiceBag.
 
 	self._data = self._maid:Add(ObservableMap.new())
 	self._dataPromise = self._maid:GivePromise(Promise.new())
-	self._profileDataPromise = self._maid:GivePromise(Promise.new())
 end
 
 function DataServiceClient.Start(self: DataServiceClient)
 	DataServiceNetwork.packets.profileLoaded.listen(function(value: { data: buffer, hiddenKeys: { string } })
-		self._profileDataPromise
-			:Then(function(profileData)
-				const cursor = Squash.frombuffer(value.data)
-				const profile = profileData.Schema.des(cursor)
+		const cursor = Squash.frombuffer(value.data)
+		const success, profile = pcall(ProfileData.Schema.des, cursor)
 
-				-- Hidden keys ride along blanked out to keep the buffer schema-shaped,
-				-- so drop them rather than surface a placeholder as if it were real
-				for _, keyName in value.hiddenKeys do
-					DataServiceUtils.writeValuePath(profile, keyName, nil)
-				end
+		if not success then
+			warn(`[DataServiceClient] - Failed to deserialize profile ({profile})`)
+			return
+		end
 
-				for keyName, keyValue in profile do
-					self._data:Set(keyName, keyValue)
-				end
+		-- Hidden keys ride along blanked out to keep the buffer schema-shaped,
+		-- so drop them rather than surface a placeholder as if it were real
+		for _, keyName in value.hiddenKeys do
+			DataServiceUtils.writeValuePath(profile, keyName, nil)
+		end
 
-				self._dataPromise:Resolve(self:GetData())
-			end)
-			:Catch(function(...): ...any
-				warn(`[DataServiceClient] - Failed to deserialize profile ({...})`)
-			end)
+		for keyName, keyValue in profile do
+			self._data:Set(keyName, keyValue)
+		end
+
+		self._dataPromise:Resolve(self:GetData())
 	end)
 
 	DataServiceNetwork.packets.valueChanged.listen(function(value: { name: string, value: any })
 		DataServiceUtils.writeObservableValuePath(self._data, value.name, value.value)
 	end)
-end
-
---[=[
-	Sets the ProfileData schema. This must be the same schema the server was
-	given via [DataService.SetSchema], or the profile buffer cannot be read.
-
-	@within DataServiceClient
-	@param schema table
-]=]
-function DataServiceClient.SetSchema(self: DataServiceClient, schema: { [any]: any })
-	if self._profileDataPromise:IsFulfilled() then
-		return
-	end
-
-	self._profileDataPromise:Resolve(schema)
 end
 
 --[=[
