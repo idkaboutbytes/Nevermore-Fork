@@ -96,6 +96,7 @@ export type NetworkDebugPoint = {
 
 export type NetworkDebugCharacter = {
 	id: number,
+	replicationDistance: number,
 	hitboxHeight: number,
 	stoppingDistance: number,
 	hasFlock: boolean,

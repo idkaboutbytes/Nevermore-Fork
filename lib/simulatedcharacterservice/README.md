@@ -123,6 +123,7 @@ zombie:MoveTo(Vector3.new(100, 0, -40))
 
 zombie:Stop()
 zombie:Teleport(CFrame.new(20, 3, 20))
+zombie:SetReplicationDistance(300)
 zombie:Destroy()
 ```
 
@@ -130,6 +131,14 @@ zombie:Destroy()
 while knockback can temporarily add visual height above it. Once inside its
 stopping distance, a character continues turning on X/Z to face its current
 target even though its movement has stopped.
+
+Each spawned character starts with its definition's `CullDistance` as its
+server replication distance. `SetReplicationDistance` overrides only that
+character's periodic updates and immediate state changes; global spawn and
+removal messages remain unchanged. The client's visual `CullDistance` is still
+defined by the registered archetype. Keep the replication distance at least as
+large as `CullDistance` if a visible NPC should never stop receiving updates
+before client culling removes its model.
 
 ## Flocking and local avoidance
 
@@ -184,7 +193,8 @@ on the server, and no debug packets or drawing work run while disabled.
 The visualization refreshes at 5 Hz:
 
 - Red boxes are authoritative hitboxes.
-- Cyan rings are client culling and network-update ranges.
+- Gray rings are client culling ranges.
+- Cyan rings are per-character network-update ranges.
 - Magenta rings are flock neighbor ranges.
 - Yellow rings are stopping distances around current targets.
 - Green lines show direct or flow-field paths.

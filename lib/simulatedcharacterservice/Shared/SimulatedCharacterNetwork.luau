@@ -48,6 +48,7 @@ return TableUtils.deepReadonly(ByteNet.defineNamespace("SimulatedCharacters", fu
 
 	const debugCharacter = ByteNet.struct({
 		id = ByteNet.uint32,
+		replicationDistance = ByteNet.float32,
 		hitboxHeight = ByteNet.float32,
 		stoppingDistance = ByteNet.float32,
 		hasFlock = ByteNet.bool,

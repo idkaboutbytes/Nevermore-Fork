@@ -431,7 +431,7 @@ function SimulatedCharacterService._isCharacterInRange(
 	playerPosition: Vector2
 ): boolean
 	const delta = character._position - playerPosition
-	const distance = character._definition.CullDistance + character._definition.HitboxRadius
+	const distance = character._replicationDistance + character._definition.HitboxRadius
 	return delta:Dot(delta) <= distance * distance
 end
 
@@ -460,6 +460,7 @@ function SimulatedCharacterService._sendDebugSnapshot(self: SimulatedCharacterSe
 
 			table.insert(debugCharacters, {
 				id = character._id,
+				replicationDistance = character._replicationDistance,
 				hitboxHeight = character._definition.HitboxHeight,
 				stoppingDistance = character._definition.StoppingDistance,
 				hasFlock = character._definition.FlockGroup ~= "",

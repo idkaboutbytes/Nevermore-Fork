@@ -30,6 +30,7 @@ export type SimulatedCharacter = typeof(setmetatable(
 		_flockSeparation: Vector2,
 		_flockSteering: Vector2,
 		_definition: SimulatedCharacterTypes.ResolvedCharacterDefinition,
+		_replicationDistance: number,
 		_position: Vector2,
 		_groundY: number,
 		_height: number,
@@ -63,6 +64,7 @@ function SimulatedCharacter.new(
 	self._flockSeparation = Vector2.zero
 	self._flockSteering = Vector2.zero
 	self._definition = definition
+	self._replicationDistance = definition.CullDistance
 	self._position = position
 	self._groundY = groundY
 	self._height = 0
@@ -129,6 +131,24 @@ end
 function SimulatedCharacter.GetHitboxSize(self: SimulatedCharacter): Vector3
 	const diameter = self._definition.HitboxRadius * 2
 	return Vector3.new(diameter, self._definition.HitboxHeight, diameter)
+end
+
+--[=[
+	Sets this character's server-to-client movement update distance. Global spawn
+	and removal messages remain unaffected.
+
+	@within SimulatedCharacter
+	@param distance number
+]=]
+function SimulatedCharacter.SetReplicationDistance(self: SimulatedCharacter, distance: number)
+	assert(not self._destroyed, "SimulatedCharacter is destroyed")
+	assert(type(distance) == "number" and distance >= 0, "Bad distance")
+	if self._replicationDistance == distance then
+		return
+	end
+
+	self._replicationDistance = distance
+	self._service:_onCharacterStateChanged(self)
 end
 
 --[=[

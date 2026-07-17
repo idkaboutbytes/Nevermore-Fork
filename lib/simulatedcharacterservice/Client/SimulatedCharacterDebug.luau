@@ -19,6 +19,7 @@ const LINE_DIAMETER = 0.15
 const NAVIGATION_Y = 0.15
 
 const HITBOX_COLOR = Color3.fromRGB(255, 75, 75)
+const CULL_RANGE_COLOR = Color3.fromRGB(210, 210, 210)
 const NETWORK_RANGE_COLOR = Color3.fromRGB(70, 210, 255)
 const FLOCK_RANGE_COLOR = Color3.fromRGB(235, 90, 255)
 const STOPPING_RANGE_COLOR = Color3.fromRGB(255, 220, 70)
@@ -29,6 +30,7 @@ const NAVIGATION_COLOR = Color3.fromRGB(80, 130, 255)
 type CharacterVisual = {
 	folder: Folder,
 	hitbox: BasePart,
+	cullRange: { BasePart },
 	networkRange: { BasePart },
 	flockRange: { BasePart },
 	stoppingRange: { BasePart },
@@ -180,6 +182,7 @@ function SimulatedCharacterDebug._createCharacterVisual(
 	return {
 		folder = folder,
 		hitbox = hitbox,
+		cullRange = {},
 		networkRange = {},
 		flockRange = {},
 		stoppingRange = {},
@@ -209,16 +212,23 @@ function SimulatedCharacterDebug._updateCharacterVisual(
 
 	const ringCenter = position + Vector3.new(0, hitboxSize.Y * 0.5 + 0.15, 0)
 	updateRing(
-		visual.networkRange,
+		visual.cullRange,
 		ringCenter,
 		definition.cullDistance + definition.hitboxRadius,
+		CULL_RANGE_COLOR,
+		visual.folder
+	)
+	updateRing(
+		visual.networkRange,
+		ringCenter + Vector3.new(0, 0.15, 0),
+		debugCharacter.replicationDistance + definition.hitboxRadius,
 		NETWORK_RANGE_COLOR,
 		visual.folder
 	)
 	if debugCharacter.hasFlock then
 		updateRing(
 			visual.flockRange,
-			ringCenter + Vector3.new(0, 0.15, 0),
+			ringCenter + Vector3.new(0, 0.3, 0),
 			SimulatedCharacterConstants.DEFAULT_FLOCK_NEIGHBOR_RADIUS,
 			FLOCK_RANGE_COLOR,
 			visual.folder
