@@ -22,6 +22,7 @@ const SimulatedCharacterConstants = require("SimulatedCharacterConstants")
 const SimulatedCharacterFlocking = require("SimulatedCharacterFlocking")
 const SimulatedCharacterNavigationGrid = require("SimulatedCharacterNavigationGrid")
 const SimulatedCharacterNetwork = require("SimulatedCharacterNetwork")
+const SimulatedCharacterSpatialHash = require("SimulatedCharacterSpatialHash")
 const SimulatedCharacterStateCodec = require("SimulatedCharacterStateCodec")
 const SimulatedCharacterTemplateProvider = require("SimulatedCharacterTemplateProvider")
 const SimulatedCharacterTargetingMode = require("SimulatedCharacterTargetingMode")
@@ -55,6 +56,7 @@ export type SimulatedCharacterService = typeof(setmetatable(
 		_targetCandidates: { SimulatedCharacterTypes.TargetCandidate },
 		_usesTargetCandidates: boolean,
 		_flocking: SimulatedCharacterFlocking.SimulatedCharacterFlocking,
+		_spatialHash: SimulatedCharacterSpatialHash.SimulatedCharacterSpatialHash,
 		_networkInterestByPlayer: { [Player]: { [number]: boolean } },
 		_lastDebugRequestByPlayer: { [Player]: number },
 		_nextCharacterId: number,
@@ -78,6 +80,8 @@ function SimulatedCharacterService.Init(self: SimulatedCharacterService, service
 	self._targetCandidates = {}
 	self._usesTargetCandidates = false
 	self._flocking = self._maid:Add(SimulatedCharacterFlocking.new())
+	self._spatialHash =
+		self._maid:Add(SimulatedCharacterSpatialHash.new(SimulatedCharacterConstants.DEFAULT_SPATIAL_CELL_SIZE))
 	self._networkInterestByPlayer = {}
 	self._lastDebugRequestByPlayer = {}
 	self._nextCharacterId = 1
@@ -269,6 +273,7 @@ function SimulatedCharacterService.SpawnCharacter(
 	self._charactersById[id] = character
 	table.insert(self._characters, character)
 	self._flocking:AddCharacter(character)
+	self._spatialHash:AddCharacter(character)
 
 	SimulatedCharacterNetwork.packets.spawned.sendToAll(self:_toNetworkSpawn(character))
 	for _, player in Players:GetPlayers() do
@@ -300,6 +305,7 @@ function SimulatedCharacterService.RemoveCharacter(
 	const id = character._id
 	self._charactersById[id] = nil
 	self._flocking:RemoveCharacter(character)
+	self._spatialHash:RemoveCharacter(character)
 	for _, interest in self._networkInterestByPlayer do
 		interest[id] = nil
 	end
@@ -340,6 +346,41 @@ function SimulatedCharacterService.GetCharacters(
 	return table.clone(self._characters)
 end
 
+--[=[
+	Returns simulated characters whose authoritative X/Z centers are within the
+	given radius, ordered nearest-first. Vector3 Y is intentionally ignored.
+
+	```lua
+	const nearby = SimulatedCharacterService:Query(position, 50)
+	const nearest = nearby[1]
+	```
+
+	@within SimulatedCharacterService
+	@param position Vector2 | Vector3
+	@param maxDistance number
+	@return { SimulatedCharacter }
+]=]
+function SimulatedCharacterService.Query(
+	self: SimulatedCharacterService,
+	position: Vector2 | Vector3,
+	maxDistance: number
+): { SimulatedCharacter.SimulatedCharacter }
+	assert(typeof(position) == "Vector2" or typeof(position) == "Vector3", "Bad position")
+	assert(
+		type(maxDistance) == "number" and maxDistance == maxDistance and maxDistance >= 0 and maxDistance < math.huge,
+		"Bad maxDistance"
+	)
+	const planarPosition = SimulatedCharacterUtils.toPlanarPosition(position)
+	assert(
+		planarPosition.X == planarPosition.X
+			and planarPosition.Y == planarPosition.Y
+			and math.abs(planarPosition.X) < math.huge
+			and math.abs(planarPosition.Y) < math.huge,
+		"Bad position"
+	)
+	return self._spatialHash:Query(planarPosition, maxDistance) :: any
+end
+
 function SimulatedCharacterService._getTime(self: SimulatedCharacterService): number
 	return self._clock:GetTime()
 end
@@ -363,6 +404,7 @@ function SimulatedCharacterService._step(self: SimulatedCharacterService, deltaT
 			character:_step(simulationStep, self._navigation, self._targetCandidates)
 		end
 		self._flocking:_resolveOverlaps(self._navigation)
+		self._spatialHash:UpdateCharacters(self._characters)
 	end
 
 	if snapshotAccumulator >= snapshotStep then
@@ -471,6 +513,7 @@ function SimulatedCharacterService._onCharacterStateChanged(
 	character: SimulatedCharacter.SimulatedCharacter
 )
 	if self._charactersById[character._id] == character then
+		self._spatialHash:UpdateCharacter(character)
 		const data = {
 			serverTime = self:_getTime(),
 			state = character:_getNetworkState(),
@@ -564,7 +607,7 @@ function SimulatedCharacterService._sendDebugSnapshot(self: SimulatedCharacterSe
 				id = character._id,
 				replicationDistance = character._replicationDistance,
 				hitboxHeight = character._definition.HitboxHeight,
-				stoppingDistance = character._definition.StoppingDistance,
+				stoppingDistance = character:_getStoppingDistance(),
 				flockNeighborRadius = character._definition.FlockNeighborRadius,
 				hasFlock = character._definition.FlockGroup ~= "",
 				hasTarget = targetPosition ~= nil,

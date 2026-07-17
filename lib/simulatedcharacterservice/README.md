@@ -238,6 +238,32 @@ placement mode. Knockback can temporarily add visual height above the resolved
 baseline. Facing always stays on X/Z and therefore never tilts a character
 toward a target above or below it.
 
+`Targeting.TargetOffset` is additional stand-off distance while directly
+chasing a player. The player remains the real navigation and facing target, so
+a large offset cannot place an artificial destination behind the NPC. The
+effective arrival distance is
+`Movement.StoppingDistance + Targeting.TargetOffset`. `ORBIT` continues to use
+`Movement.OrbitRadius` and its normal stopping distance instead.
+
+## Spatial queries
+
+Server code can query authoritative NPC centers with either a `Vector2` or
+`Vector3`. Results are nearest-first and `Vector3.Y` is ignored:
+
+```luau
+const nearby = simulatedCharacters:Query(hitPosition, 40)
+const nearest = nearby[1]
+
+for _, character in nearby do
+	print(character:GetId(), character:GetPosition())
+end
+```
+
+Queries use an incrementally updated X/Z spatial hash. Small radii inspect only
+overlapping cells; large radii automatically scan the dense character set when
+that is cheaper than visiting empty cells. Distances are measured from each
+authoritative character center and do not include its hitbox radius.
+
 `SetSimulationRate` changes the character's local passage of time without
 changing the service's global 20 Hz simulation or 10 Hz snapshot schedules. It
 scales movement, turning, targeting timers, wandering, orbiting, knockback,

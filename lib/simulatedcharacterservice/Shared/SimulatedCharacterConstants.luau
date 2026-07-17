@@ -18,6 +18,7 @@ SimulatedCharacterConstants.DEFAULT_CHARACTER_SIMULATION_RATE = 1
 SimulatedCharacterConstants.DEFAULT_SNAPSHOT_RATE = 10
 SimulatedCharacterConstants.DEFAULT_INTERPOLATION_DELAY = 0.1
 SimulatedCharacterConstants.DEFAULT_MAX_EXTRAPOLATION = 0.25
+SimulatedCharacterConstants.DEFAULT_SPATIAL_CELL_SIZE = 32
 SimulatedCharacterConstants.DEFAULT_NAVIGATION_CELL_SIZE = 4
 SimulatedCharacterConstants.DEFAULT_NAVIGATION_AGENT_RADIUS = 2
 SimulatedCharacterConstants.DEFAULT_FLOW_FIELD_REFRESH = 0.25

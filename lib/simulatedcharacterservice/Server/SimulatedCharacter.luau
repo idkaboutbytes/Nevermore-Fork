@@ -50,7 +50,7 @@ export type SimulatedCharacter = typeof(setmetatable(
 		_nextWanderAt: number,
 		_returningHome: boolean,
 		_hasReachedTarget: boolean,
-		_targetOffsetAngle: number,
+		_orbitOffsetAngle: number,
 		_position: Vector2,
 		_groundY: number,
 		_height: number,
@@ -99,7 +99,7 @@ function SimulatedCharacter.new(
 	self._nextWanderAt = 0
 	self._returningHome = false
 	self._hasReachedTarget = false
-	self._targetOffsetAngle = id * 2.399963229728653
+	self._orbitOffsetAngle = id * 2.399963229728653
 	self._position = position
 	self._groundY = groundY
 	self._height = 0
@@ -371,14 +371,12 @@ function SimulatedCharacter._getTarget(self: SimulatedCharacter): (Vector2?, any
 		const root = playerCharacter
 			and (playerCharacter:FindFirstChild("HumanoidRootPart") or playerCharacter.PrimaryPart)
 		if root and root:IsA("BasePart") then
-			local targetPosition = Vector2.new(root.Position.X, root.Position.Z)
+			const targetPosition = Vector2.new(root.Position.X, root.Position.Z)
 			if self._definition.MovementController == SimulatedCharacterMovementController.ORBIT then
-				const angle = self._simulationTime * self._definition.OrbitSpeed + self._targetOffsetAngle
-				targetPosition += Vector2.new(math.cos(angle), math.sin(angle)) * self._definition.OrbitRadius
-				return targetPosition, self._id
-			elseif self._definition.TargetOffset > 0 then
-				targetPosition += Vector2.new(math.cos(self._targetOffsetAngle), math.sin(self._targetOffsetAngle)) * self._definition.TargetOffset
-				return targetPosition, self._id
+				const angle = self._simulationTime * self._definition.OrbitSpeed + self._orbitOffsetAngle
+				const orbitPosition = targetPosition
+					+ Vector2.new(math.cos(angle), math.sin(angle)) * self._definition.OrbitRadius
+				return orbitPosition, self._id
 			end
 
 			return targetPosition, targetPlayer
@@ -387,6 +385,16 @@ function SimulatedCharacter._getTarget(self: SimulatedCharacter): (Vector2?, any
 	end
 
 	return self._targetPosition, self._id
+end
+
+function SimulatedCharacter._getStoppingDistance(self: SimulatedCharacter): number
+	if self._returningHome then
+		return math.min(self._definition.StoppingDistance, self._definition.LeashRange)
+	elseif self._targetPlayer and self._definition.MovementController ~= SimulatedCharacterMovementController.ORBIT then
+		return self._definition.StoppingDistance + self._definition.TargetOffset
+	else
+		return self._definition.StoppingDistance
+	end
 end
 
 function SimulatedCharacter._step(
@@ -545,9 +553,7 @@ function SimulatedCharacter._stepKinematic(self: SimulatedCharacter, deltaTime: 
 
 	const targetDelta = targetPosition - self._position
 	const distance = targetDelta.Magnitude
-	const stoppingDistance = if self._returningHome
-		then math.min(self._definition.StoppingDistance, self._definition.LeashRange)
-		else self._definition.StoppingDistance
+	const stoppingDistance = self:_getStoppingDistance()
 	const arrived = distance <= stoppingDistance
 	if arrived then
 		if not self._hasReachedTarget then
