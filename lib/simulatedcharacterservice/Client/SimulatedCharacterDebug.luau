@@ -10,7 +10,6 @@ const require = require("../../Loader").load()
 
 const Draw = require("Draw")
 const Maid = require("Maid")
-const SimulatedCharacterConstants = require("SimulatedCharacterConstants")
 const SimulatedCharacterTypes = require("SimulatedCharacterTypes")
 const SimulatedCharacterUtils = require("SimulatedCharacterUtils")
 
@@ -229,7 +228,7 @@ function SimulatedCharacterDebug._updateCharacterVisual(
 		updateRing(
 			visual.flockRange,
 			ringCenter + Vector3.new(0, 0.3, 0),
-			SimulatedCharacterConstants.DEFAULT_FLOCK_NEIGHBOR_RADIUS,
+			debugCharacter.flockNeighborRadius,
 			FLOCK_RANGE_COLOR,
 			visual.folder
 		)

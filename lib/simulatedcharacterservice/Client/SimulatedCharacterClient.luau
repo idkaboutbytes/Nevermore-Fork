@@ -15,6 +15,7 @@ const DefaultCharacterAnimationUtils = require("DefaultCharacterAnimationUtils")
 const Maid = require("Maid")
 const MathUtils = require("MathUtils")
 const SimulatedCharacterConstants = require("SimulatedCharacterConstants")
+const SimulatedCharacterPlacementMode = require("SimulatedCharacterPlacementMode")
 const SimulatedCharacterTypes = require("SimulatedCharacterTypes")
 const SimulatedCharacterUtils = require("SimulatedCharacterUtils")
 
@@ -33,6 +34,8 @@ export type SimulatedCharacterClient = typeof(setmetatable(
 		_previousTime: number,
 		_currentTime: number,
 		_renderCFrame: CFrame,
+		_modelPivotOffset: CFrame,
+		_rootCFrameOffset: CFrame,
 		_renderIndex: number,
 		_culled: boolean,
 		_destroyed: boolean,
@@ -64,6 +67,8 @@ function SimulatedCharacterClient.new(
 	self._previousTime = spawn.serverTime
 	self._currentTime = spawn.serverTime
 	self._renderCFrame = SimulatedCharacterUtils.toCFrame(state.x, state.z, state.groundY, state.height, state.yaw)
+	self._modelPivotOffset = CFrame.identity
+	self._rootCFrameOffset = CFrame.identity
 	self._renderIndex = 0
 	self._culled = true
 	self._destroyed = false
@@ -195,9 +200,9 @@ function SimulatedCharacterClient._render(self: SimulatedCharacterClient, render
 
 	self._renderCFrame = SimulatedCharacterUtils.toCFrame(x, z, groundY, height, yaw)
 	if self._ragdolled then
-		root.CFrame = self._renderCFrame
+		root.CFrame = self._renderCFrame * self._rootCFrameOffset
 	else
-		model:PivotTo(self._renderCFrame)
+		model:PivotTo(self._renderCFrame * self._modelPivotOffset)
 	end
 
 	self:_updateAnimation()
@@ -221,7 +226,7 @@ function SimulatedCharacterClient._mountModel(self: SimulatedCharacterClient)
 			self._renderCFrame =
 				SimulatedCharacterUtils.toCFrame(state.x, state.z, state.groundY, state.height, state.yaw)
 			model.Name = `{self._definition.name}_{self._id}`
-			model:PivotTo(self._renderCFrame)
+			model:PivotTo(self._renderCFrame * self._modelPivotOffset)
 			model.Parent = self._service:_getRenderParent()
 			self:_setModelRagdolled(self._currentState.mode == SimulatedCharacterConstants.Modes.RAGDOLL, true, true)
 			self._service:_setCharacterRendered(self, true)
@@ -245,12 +250,15 @@ function SimulatedCharacterClient._unmountModel(self: SimulatedCharacterClient)
 	self:_stopAnimations()
 	self._model = nil
 	self._root = nil
+	self._modelPivotOffset = CFrame.identity
+	self._rootCFrameOffset = CFrame.identity
 	table.clear(self._ragdollMotors)
 	table.clear(self._ragdollConstraints)
 	self._service:_releaseModel(self._definition.templateName, model)
 end
 
 function SimulatedCharacterClient._prepareModel(self: SimulatedCharacterClient, model: Model)
+	model:ScaleTo(self._definition.scale)
 	local root = model.PrimaryPart or model:FindFirstChild("HumanoidRootPart")
 	if not root or not root:IsA("BasePart") then
 		root = model:FindFirstChildWhichIsA("BasePart", true)
@@ -258,6 +266,20 @@ function SimulatedCharacterClient._prepareModel(self: SimulatedCharacterClient, 
 	assert(root and root:IsA("BasePart"), `Template {self._definition.templateName} has no BasePart`)
 	model.PrimaryPart = root
 	self._root = root
+
+	const pivot = model:GetPivot()
+	const boundsCFrame, boundsSize = model:GetBoundingBox()
+	const pivotToBounds = pivot:ToObjectSpace(boundsCFrame)
+	const placementMode = self._definition.placementMode
+	if placementMode == SimulatedCharacterPlacementMode.BOUNDING_BOX_CENTER then
+		self._modelPivotOffset = pivotToBounds:Inverse()
+	elseif placementMode == SimulatedCharacterPlacementMode.GROUNDED then
+		const centerOffset = (boundsSize.Y - self._definition.hitboxHeight) * 0.5
+		self._modelPivotOffset = CFrame.new(0, centerOffset, 0) * pivotToBounds:Inverse()
+	else
+		self._modelPivotOffset = CFrame.identity
+	end
+	self._rootCFrameOffset = self._modelPivotOffset * pivot:ToObjectSpace(root.CFrame)
 
 	for _, descendant in model:GetDescendants() do
 		if descendant:IsA("BasePart") then

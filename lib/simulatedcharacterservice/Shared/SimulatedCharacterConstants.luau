@@ -33,6 +33,17 @@ SimulatedCharacterConstants.DEFAULT_HITBOX_HEIGHT = 6
 SimulatedCharacterConstants.DEFAULT_CULL_DISTANCE = 250
 SimulatedCharacterConstants.DEFAULT_KNOCKBACK_DAMPING = 2
 SimulatedCharacterConstants.DEFAULT_GROUND_FRICTION = 8
+SimulatedCharacterConstants.DEFAULT_SCALE = 1
+SimulatedCharacterConstants.DEFAULT_GROUND_OFFSET = 0.1
+
+SimulatedCharacterConstants.DEFAULT_AGGRO_RANGE = 80
+SimulatedCharacterConstants.DEFAULT_LEASH_RANGE = 140
+SimulatedCharacterConstants.DEFAULT_TARGET_OFFSET = 0
+SimulatedCharacterConstants.DEFAULT_RETARGET_INTERVAL = 0.25
+SimulatedCharacterConstants.DEFAULT_WANDER_RADIUS = 24
+SimulatedCharacterConstants.DEFAULT_WANDER_INTERVAL = 4
+SimulatedCharacterConstants.DEFAULT_ORBIT_RADIUS = 8
+SimulatedCharacterConstants.DEFAULT_ORBIT_SPEED = math.rad(45)
 
 SimulatedCharacterConstants.DEFAULT_FLOCK_NEIGHBOR_RADIUS = 14
 SimulatedCharacterConstants.DEFAULT_FLOCK_SEPARATION_PADDING = 1

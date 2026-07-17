@@ -13,11 +13,15 @@ const Maid = require("Maid")
 const SimulatedCharacterConstants = require("SimulatedCharacterConstants")
 const TableUtils = require("TableUtils")
 
-const NEIGHBOR_RADIUS_SQUARED = SimulatedCharacterConstants.DEFAULT_FLOCK_NEIGHBOR_RADIUS ^ 2
-
 type FlockCharacterDefinition = {
 	FlockGroup: string,
 	HitboxRadius: number,
+	FlockNeighborRadius: number,
+	FlockSeparationPadding: number,
+	FlockSeparationWeight: number,
+	FlockAlignmentWeight: number,
+	FlockCohesionWeight: number,
+	FlockMaxSteering: number,
 }
 
 type FlockCharacter = {
@@ -128,6 +132,7 @@ function SimulatedCharacterFlocking.Step(self: SimulatedCharacterFlocking)
 			end
 
 			const position = character._position
+			const neighborRadiusSquared = character._definition.FlockNeighborRadius ^ 2
 			local separation = Vector2.zero
 			local alignment = Vector2.zero
 			local center = Vector2.zero
@@ -139,7 +144,7 @@ function SimulatedCharacterFlocking.Step(self: SimulatedCharacterFlocking)
 
 				local delta = neighbor._position - position
 				const distanceSquared = delta:Dot(delta)
-				if distanceSquared > NEIGHBOR_RADIUS_SQUARED then
+				if distanceSquared > neighborRadiusSquared then
 					continue
 				end
 
@@ -148,7 +153,7 @@ function SimulatedCharacterFlocking.Step(self: SimulatedCharacterFlocking)
 				center += neighbor._position
 				const separationDistance = character._definition.HitboxRadius
 					+ neighbor._definition.HitboxRadius
-					+ SimulatedCharacterConstants.DEFAULT_FLOCK_SEPARATION_PADDING
+					+ character._definition.FlockSeparationPadding
 				if distanceSquared > 1e-6 then
 					const distance = math.sqrt(distanceSquared)
 					if distance < separationDistance then
@@ -171,21 +176,21 @@ function SimulatedCharacterFlocking.Step(self: SimulatedCharacterFlocking)
 			if separationMagnitude > 1 then
 				separation /= separationMagnitude
 			end
-			const weightedSeparation = separation * SimulatedCharacterConstants.DEFAULT_FLOCK_SEPARATION_WEIGHT
+			const weightedSeparation = separation * character._definition.FlockSeparationWeight
 			local steering = weightedSeparation
 			const alignmentMagnitude = alignment.Magnitude
 			if alignmentMagnitude > 1e-4 then
-				steering += alignment / alignmentMagnitude * SimulatedCharacterConstants.DEFAULT_FLOCK_ALIGNMENT_WEIGHT
+				steering += alignment / alignmentMagnitude * character._definition.FlockAlignmentWeight
 			end
 			const cohesionDelta = center / neighborCount - position
 			const cohesionMagnitude = cohesionDelta.Magnitude
 			if cohesionMagnitude > 1e-4 then
-				steering += cohesionDelta / cohesionMagnitude * SimulatedCharacterConstants.DEFAULT_FLOCK_COHESION_WEIGHT
+				steering += cohesionDelta / cohesionMagnitude * character._definition.FlockCohesionWeight
 			end
 
 			const steeringMagnitude = steering.Magnitude
-			if steeringMagnitude > SimulatedCharacterConstants.DEFAULT_FLOCK_MAX_STEERING then
-				steering = steering / steeringMagnitude * SimulatedCharacterConstants.DEFAULT_FLOCK_MAX_STEERING
+			if steeringMagnitude > character._definition.FlockMaxSteering then
+				steering = steering / steeringMagnitude * character._definition.FlockMaxSteering
 			end
 			character._flockSeparation = weightedSeparation
 			character._flockSteering = steering

@@ -5,8 +5,94 @@
 	@class SimulatedCharacterTypes
 ]=]
 
+export type PlacementMode = number
+export type MovementController = number
+export type TargetingMode = number
+export type FacingMode = number
+export type VariantSelectionMode = number
+
+export type TemplateVariant = {
+	Name: string,
+	Weight: number?,
+}
+
+export type ResolvedTemplateVariant = {
+	Name: string,
+	Weight: number,
+}
+
+export type TemplateConfig = {
+	Name: string?,
+	Variants: { TemplateVariant }?,
+	SelectionMode: VariantSelectionMode?,
+	Scale: number?,
+}
+
+export type PlacementConfig = {
+	Mode: PlacementMode?,
+	GroundOffset: number?,
+}
+
+export type MovementConfig = {
+	Controller: MovementController?,
+	MoveSpeed: number?,
+	TurnSpeed: number?,
+	StoppingDistance: number?,
+	FacingMode: FacingMode?,
+	WanderRadius: number?,
+	WanderInterval: number?,
+	OrbitRadius: number?,
+	OrbitSpeed: number?,
+}
+
+export type TargetingConfig = {
+	Mode: TargetingMode?,
+	AggroRange: number?,
+	LeashRange: number?,
+	TargetOffset: number?,
+	RetargetInterval: number?,
+}
+
+export type FlockingConfig = {
+	Group: string?,
+	NeighborRadius: number?,
+	SeparationPadding: number?,
+	SeparationWeight: number?,
+	AlignmentWeight: number?,
+	CohesionWeight: number?,
+	MaxSteering: number?,
+}
+
+export type PhysicsConfig = {
+	HitboxRadius: number?,
+	HitboxHeight: number?,
+	KnockbackDamping: number?,
+	GroundFriction: number?,
+}
+
+export type NetworkingConfig = {
+	CullDistance: number?,
+	ReplicationDistance: number?,
+}
+
+export type AnimationConfig = {
+	UseDefaults: boolean?,
+	Idle: string?,
+	Walk: string?,
+}
+
 export type CharacterDefinition = {
-	TemplateName: string,
+	Template: TemplateConfig?,
+	Placement: PlacementConfig?,
+	Movement: MovementConfig?,
+	Targeting: TargetingConfig?,
+	Flocking: FlockingConfig?,
+	Physics: PhysicsConfig?,
+	Networking: NetworkingConfig?,
+	Animations: AnimationConfig?,
+
+	-- Legacy flat fields remain supported.
+	TemplateName: string?,
 	MoveSpeed: number?,
 	TurnSpeed: number?,
 	StoppingDistance: number?,
@@ -24,18 +110,46 @@ export type CharacterDefinition = {
 export type ResolvedCharacterDefinition = {
 	Name: string,
 	TemplateName: string,
+	TemplateVariants: { ResolvedTemplateVariant },
+	TemplateSelectionMode: VariantSelectionMode,
+	Scale: number,
+	PlacementMode: PlacementMode,
+	GroundOffset: number,
+	MovementController: MovementController,
 	MoveSpeed: number,
 	TurnSpeed: number,
 	StoppingDistance: number,
+	FacingMode: FacingMode,
+	WanderRadius: number,
+	WanderInterval: number,
+	OrbitRadius: number,
+	OrbitSpeed: number,
+	TargetingMode: TargetingMode,
+	AggroRange: number,
+	LeashRange: number,
+	TargetOffset: number,
+	RetargetInterval: number,
 	HitboxRadius: number,
 	HitboxHeight: number,
 	CullDistance: number,
+	ReplicationDistance: number,
 	KnockbackDamping: number,
 	GroundFriction: number,
 	IdleAnimationId: string,
 	WalkAnimationId: string,
 	UseDefaultAnimations: boolean,
 	FlockGroup: string,
+	FlockNeighborRadius: number,
+	FlockSeparationPadding: number,
+	FlockSeparationWeight: number,
+	FlockAlignmentWeight: number,
+	FlockCohesionWeight: number,
+	FlockMaxSteering: number,
+}
+
+export type TargetCandidate = {
+	Player: Player,
+	Position: Vector2,
 }
 
 export type NavigationConfig = {
@@ -71,8 +185,11 @@ export type NetworkState = {
 export type NetworkDefinition = {
 	name: string,
 	templateName: string,
+	scale: number,
+	placementMode: PlacementMode,
 	cullDistance: number,
 	hitboxRadius: number,
+	hitboxHeight: number,
 	idleAnimationId: string,
 	walkAnimationId: string,
 	useDefaultAnimations: boolean,
@@ -99,6 +216,7 @@ export type NetworkDebugCharacter = {
 	replicationDistance: number,
 	hitboxHeight: number,
 	stoppingDistance: number,
+	flockNeighborRadius: number,
 	hasFlock: boolean,
 	hasTarget: boolean,
 	targetX: number,

@@ -15,6 +15,7 @@ const RunService = game:GetService("RunService")
 const require = require("../Loader").load()
 
 const Maid = require("Maid")
+const RandomUtils = require("RandomUtils")
 const ServiceBag = require("ServiceBag")
 const SimulatedCharacter = require("SimulatedCharacter")
 const SimulatedCharacterConstants = require("SimulatedCharacterConstants")
@@ -22,10 +23,13 @@ const SimulatedCharacterFlocking = require("SimulatedCharacterFlocking")
 const SimulatedCharacterNavigationGrid = require("SimulatedCharacterNavigationGrid")
 const SimulatedCharacterNetwork = require("SimulatedCharacterNetwork")
 const SimulatedCharacterTemplateProvider = require("SimulatedCharacterTemplateProvider")
+const SimulatedCharacterTargetingMode = require("SimulatedCharacterTargetingMode")
 const SimulatedCharacterTypes = require("SimulatedCharacterTypes")
 const SimulatedCharacterUtils = require("SimulatedCharacterUtils")
+const SimulatedCharacterVariantSelectionMode = require("SimulatedCharacterVariantSelectionMode")
 const TableUtils = require("TableUtils")
 const TimeSyncService = require("TimeSyncService")
+const WeightedRandomChooser = require("WeightedRandomChooser")
 
 const DEBUG_REQUEST_COOLDOWN = 0.15
 
@@ -42,8 +46,13 @@ export type SimulatedCharacterService = typeof(setmetatable(
 		_templateProvider: any,
 		_templateContainer: Folder?,
 		_definitions: { [string]: SimulatedCharacterTypes.ResolvedCharacterDefinition },
+		_variantChoosers: { [string]: any },
+		_variantCursors: { [string]: number },
+		_variantRandom: Random,
 		_charactersById: { [number]: SimulatedCharacter.SimulatedCharacter },
 		_characters: { SimulatedCharacter.SimulatedCharacter },
+		_targetCandidates: { SimulatedCharacterTypes.TargetCandidate },
+		_usesTargetCandidates: boolean,
 		_flocking: SimulatedCharacterFlocking.SimulatedCharacterFlocking,
 		_networkInterestByPlayer: { [Player]: { [number]: boolean } },
 		_lastDebugRequestByPlayer: { [Player]: number },
@@ -60,8 +69,13 @@ function SimulatedCharacterService.Init(self: SimulatedCharacterService, service
 	self._serviceBag = assert(serviceBag, "No serviceBag")
 	self._maid = Maid.new()
 	self._definitions = {}
+	self._variantChoosers = {}
+	self._variantCursors = {}
+	self._variantRandom = Random.new()
 	self._charactersById = {}
 	self._characters = {}
+	self._targetCandidates = {}
+	self._usesTargetCandidates = false
 	self._flocking = self._maid:Add(SimulatedCharacterFlocking.new())
 	self._networkInterestByPlayer = {}
 	self._lastDebugRequestByPlayer = {}
@@ -190,9 +204,21 @@ function SimulatedCharacterService.RegisterCharacter(
 	name: string,
 	definition: SimulatedCharacterTypes.CharacterDefinition
 ): SimulatedCharacterTypes.ResolvedCharacterDefinition
+	assert(type(name) == "string" and name ~= "", "Bad name")
 	assert(self._definitions[name] == nil, `Character definition {name} is already registered`)
 	const resolvedDefinition = SimulatedCharacterUtils.resolveDefinition(name, definition)
 	self._definitions[name] = resolvedDefinition
+	self._variantCursors[name] = 0
+	if resolvedDefinition.TemplateSelectionMode == SimulatedCharacterVariantSelectionMode.WEIGHTED then
+		const chooser = WeightedRandomChooser.new()
+		for index, variant in resolvedDefinition.TemplateVariants do
+			chooser:SetWeight(index, variant.Weight)
+		end
+		self._variantChoosers[name] = chooser
+	end
+	if resolvedDefinition.TargetingMode == SimulatedCharacterTargetingMode.NEAREST_PLAYER then
+		self._usesTargetCandidates = true
+	end
 	return resolvedDefinition
 end
 
@@ -229,12 +255,15 @@ function SimulatedCharacterService.SpawnCharacter(
 		groundY = worldPosition.Y
 		yaw = math.atan2(-cframe.LookVector.X, -cframe.LookVector.Z)
 	end
+	groundY = SimulatedCharacterUtils.resolveSpawnY(definition, groundY)
 
 	const id = self._nextCharacterId
 	assert(id <= 4_294_967_295, "Simulated character id space exhausted")
 	self._nextCharacterId += 1
 
-	const character = SimulatedCharacter.new(self, id, definition, position, groundY, yaw, data.Ragdolled == true)
+	const templateName = self:_selectTemplateName(definition)
+	const character =
+		SimulatedCharacter.new(self, id, definition, templateName, position, groundY, yaw, data.Ragdolled == true)
 	character._listIndex = #self._characters + 1
 	self._charactersById[id] = character
 	table.insert(self._characters, character)
@@ -325,9 +354,12 @@ function SimulatedCharacterService._step(self: SimulatedCharacterService, deltaT
 	while simulationAccumulator >= simulationStep and simulationCount < 5 do
 		simulationAccumulator -= simulationStep
 		simulationCount += 1
+		if self._usesTargetCandidates then
+			self:_updateTargetCandidates()
+		end
 		self._flocking:Step()
 		for _, character in self._characters do
-			character:_step(simulationStep, self._navigation)
+			character:_step(simulationStep, self._navigation, self._targetCandidates)
 		end
 	end
 
@@ -338,6 +370,56 @@ function SimulatedCharacterService._step(self: SimulatedCharacterService, deltaT
 
 	self._simulationAccumulator = simulationAccumulator
 	self._snapshotAccumulator = snapshotAccumulator
+end
+
+function SimulatedCharacterService._updateTargetCandidates(self: SimulatedCharacterService)
+	local count = 0
+	for _, player in Players:GetPlayers() do
+		const position = self:_getPlayerPosition(player)
+		if not position then
+			continue
+		end
+
+		count += 1
+		local candidate = self._targetCandidates[count]
+		if candidate then
+			candidate.Player = player
+			candidate.Position = position
+		else
+			candidate = {
+				Player = player,
+				Position = position,
+			}
+			self._targetCandidates[count] = candidate
+		end
+	end
+	for index = #self._targetCandidates, count + 1, -1 do
+		self._targetCandidates[index] = nil
+	end
+end
+
+function SimulatedCharacterService._selectTemplateName(
+	self: SimulatedCharacterService,
+	definition: SimulatedCharacterTypes.ResolvedCharacterDefinition
+): string
+	const variants = definition.TemplateVariants
+	if #variants == 1 then
+		return variants[1].Name
+	end
+
+	const selectionMode = definition.TemplateSelectionMode
+	if selectionMode == SimulatedCharacterVariantSelectionMode.WEIGHTED then
+		const chooser = assert(self._variantChoosers[definition.Name], "Missing template variant chooser")
+		const index = chooser:Choose(self._variantRandom)
+		return variants[index].Name
+	elseif selectionMode == SimulatedCharacterVariantSelectionMode.RANDOM then
+		const variant = assert(RandomUtils.choice(variants, self._variantRandom), "No template variants")
+		return variant.Name
+	else
+		const index = self._variantCursors[definition.Name] % #variants + 1
+		self._variantCursors[definition.Name] = index
+		return variants[index].Name
+	end
 end
 
 function SimulatedCharacterService._sendSnapshot(self: SimulatedCharacterService)
@@ -463,6 +545,7 @@ function SimulatedCharacterService._sendDebugSnapshot(self: SimulatedCharacterSe
 				replicationDistance = character._replicationDistance,
 				hitboxHeight = character._definition.HitboxHeight,
 				stoppingDistance = character._definition.StoppingDistance,
+				flockNeighborRadius = character._definition.FlockNeighborRadius,
 				hasFlock = character._definition.FlockGroup ~= "",
 				hasTarget = targetPosition ~= nil,
 				targetX = if targetPosition then targetPosition.X else 0,
@@ -485,13 +568,17 @@ end
 
 function SimulatedCharacterService._toNetworkDefinition(
 	_self: SimulatedCharacterService,
-	definition: SimulatedCharacterTypes.ResolvedCharacterDefinition
+	character: SimulatedCharacter.SimulatedCharacter
 ): SimulatedCharacterTypes.NetworkDefinition
+	const definition = character._definition
 	return {
 		name = definition.Name,
-		templateName = definition.TemplateName,
+		templateName = character._templateName,
+		scale = definition.Scale,
+		placementMode = definition.PlacementMode,
 		cullDistance = definition.CullDistance,
 		hitboxRadius = definition.HitboxRadius,
+		hitboxHeight = definition.HitboxHeight,
 		idleAnimationId = definition.IdleAnimationId,
 		walkAnimationId = definition.WalkAnimationId,
 		useDefaultAnimations = definition.UseDefaultAnimations,
@@ -504,7 +591,7 @@ function SimulatedCharacterService._toNetworkSpawn(
 ): SimulatedCharacterTypes.NetworkSpawn
 	return {
 		serverTime = self:_getTime(),
-		definition = self:_toNetworkDefinition(character._definition),
+		definition = self:_toNetworkDefinition(character),
 		state = character:_getNetworkState(),
 	}
 end

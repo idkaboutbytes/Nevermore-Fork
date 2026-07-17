@@ -61,12 +61,12 @@ script per NPC.
 
 Animation resolution is:
 
-1. `IdleAnimationId` or `WalkAnimationId` in the registered definition.
+1. `Animations.Idle` or `Animations.Walk` in the registered definition.
 2. The NPC template's `Animate` hierarchy.
 3. The local player's default `Animate` hierarchy or applied
    `HumanoidDescription`.
 
-Set `UseDefaultAnimations = false` to disable steps 2 and 3.
+Set `Animations.UseDefaults = false` to disable steps 2 and 3.
 
 ## Server setup
 
@@ -75,8 +75,15 @@ explicit navigation region and register character definitions during startup:
 
 ```luau
 const SimulatedCharacterService = require("SimulatedCharacterService")
+const SimulatedCharacterEnums = require("SimulatedCharacterEnums")
 
 local simulatedCharacters = serviceBag:GetService(SimulatedCharacterService)
+
+const FacingMode = SimulatedCharacterEnums.FacingMode
+const MovementController = SimulatedCharacterEnums.MovementController
+const PlacementMode = SimulatedCharacterEnums.PlacementMode
+const TargetingMode = SimulatedCharacterEnums.TargetingMode
+const VariantSelectionMode = SimulatedCharacterEnums.VariantSelectionMode
 
 simulatedCharacters:ConfigureNavigation({
 	Min = Vector2.new(-256, -256),
@@ -87,17 +94,108 @@ simulatedCharacters:ConfigureNavigation({
 })
 
 simulatedCharacters:RegisterCharacter("Zombie", {
-	TemplateName = "Zombie",
-	MoveSpeed = 10,
-	TurnSpeed = math.rad(360),
-	StoppingDistance = 3,
-	HitboxRadius = 2,
-	HitboxHeight = 6,
-	CullDistance = 220,
-	UseDefaultAnimations = true,
-	FlockGroup = "Undead",
+	Template = {
+		Variants = {
+			{ Name = "Zombie", Weight = 8 },
+			{ Name = "ArmoredZombie", Weight = 2 },
+		},
+		SelectionMode = VariantSelectionMode.WEIGHTED,
+		Scale = 1,
+	},
+	Placement = {
+		Mode = PlacementMode.GROUNDED,
+		GroundOffset = 0.1,
+	},
+	Movement = {
+		Controller = MovementController.GUARD,
+		MoveSpeed = 10,
+		TurnSpeed = math.rad(360),
+		StoppingDistance = 3,
+		FacingMode = FacingMode.TARGET_WHEN_STOPPED,
+		WanderRadius = 24,
+		WanderInterval = 4,
+		OrbitRadius = 8,
+		OrbitSpeed = math.rad(45),
+	},
+	Targeting = {
+		Mode = TargetingMode.NEAREST_PLAYER,
+		AggroRange = 80,
+		LeashRange = 140,
+		TargetOffset = 2,
+		RetargetInterval = 0.25,
+	},
+	Flocking = {
+		Group = "Undead",
+		NeighborRadius = 14,
+		SeparationPadding = 1,
+		SeparationWeight = 1.6,
+		AlignmentWeight = 0.2,
+		CohesionWeight = 0.08,
+		MaxSteering = 1.75,
+	},
+	Physics = {
+		HitboxRadius = 2,
+		HitboxHeight = 6,
+		KnockbackDamping = 2,
+		GroundFriction = 8,
+	},
+	Networking = {
+		CullDistance = 220,
+		ReplicationDistance = 240,
+	},
+	Animations = {
+		UseDefaults = true,
+		Idle = "",
+		Walk = "",
+	},
 })
 ```
+
+The nested sections are the preferred registration format. Existing flat
+fields such as `TemplateName`, `MoveSpeed`, `CullDistance`, and `FlockGroup`
+remain supported so current definitions do not need to be migrated at once.
+
+## Enum lists
+
+Each categorical setting has its own `Enums` list and all five are also exposed
+by `SimulatedCharacterEnums`:
+
+- `SimulatedCharacterPlacementMode`: `PIVOT`, `BOUNDING_BOX_CENTER`, `GROUNDED`.
+- `SimulatedCharacterMovementController`: `MANUAL`, `CHASE`, `WANDER`, `GUARD`, `ORBIT`.
+- `SimulatedCharacterTargetingMode`: `MANUAL`, `NEAREST_PLAYER`.
+- `SimulatedCharacterFacingMode`: `MOVEMENT`, `TARGET_WHEN_STOPPED`, `TARGET_ALWAYS`.
+- `SimulatedCharacterVariantSelectionMode`: `WEIGHTED`, `RANDOM`, `SEQUENTIAL`.
+
+You may require a specific list directly when that makes a module clearer:
+
+```luau
+const SimulatedCharacterMovementController = require("SimulatedCharacterMovementController")
+
+simulatedCharacters:RegisterCharacter("Wanderer", {
+	Template = { Name = "Zombie" },
+	Movement = {
+		Controller = SimulatedCharacterMovementController.WANDER,
+	},
+})
+```
+
+`MANUAL` leaves movement to `MoveTo`, `Chase`, and `Stop`. `CHASE` waits for a
+target, `WANDER` picks points around the spawn home, `GUARD` chases and returns
+home, and `ORBIT` moves around its target. `NEAREST_PLAYER` performs automatic
+target acquisition at `RetargetInterval`; `MANUAL` only uses targets assigned
+through the character handle.
+
+`GROUNDED` interprets a spawn Y as the floor, raises the authoritative hitbox by
+half its height plus `GroundOffset`, centers the visual on X/Z, and places the
+visual bounding-box bottom on that floor. `BOUNDING_BOX_CENTER` aligns the full
+visual bounding-box center to the authoritative CFrame. `PIVOT` preserves the
+template's authored pivot behavior.
+
+`WEIGHTED` uses each variant's `Weight`, `RANDOM` gives every variant equal
+odds, and `SEQUENTIAL` cycles through registration order. Selection happens
+once on spawn. Only the selected template and the other client-rendering fields
+are replicated; server-only movement, targeting, flocking, and physics tuning
+do not inflate movement snapshots.
 
 The client must acquire `SimulatedCharacterServiceClient` through its own
 `ServiceBag`. Its lifecycle starts culling, time synchronization, networking,
@@ -113,7 +211,8 @@ local simulatedCharactersClient = serviceBag:GetService(SimulatedCharacterServic
 
 ```luau
 local zombie = simulatedCharacters:SpawnCharacter("Zombie", {
-	CFrame = CFrame.new(0, 3, 0),
+	-- With GROUNDED placement, Y=0 is the floor rather than the root center.
+	CFrame = CFrame.new(0, 0, 0),
 })
 
 zombie:Chase(player)
@@ -127,28 +226,47 @@ zombie:SetReplicationDistance(300)
 zombie:Destroy()
 ```
 
-`MoveTo` and `Chase` ignore Y. `GroundY` remains the root's baseline height,
-while knockback can temporarily add visual height above it. Once inside its
-stopping distance, a character continues turning on X/Z to face its current
-target even though its movement has stopped.
+`MoveTo` and `Chase` ignore Y. `GroundY` and `CFrame.Y` use the definition's
+placement mode. Knockback can temporarily add visual height above the resolved
+baseline. Facing always stays on X/Z and therefore never tilts a character
+toward a target above or below it.
 
-Each spawned character starts with its definition's `CullDistance` as its
-server replication distance. `SetReplicationDistance` overrides only that
-character's periodic updates and immediate state changes; global spawn and
-removal messages remain unchanged. The client's visual `CullDistance` is still
-defined by the registered archetype. Keep the replication distance at least as
-large as `CullDistance` if a visible NPC should never stop receiving updates
-before client culling removes its model.
+Spawned handles expose lifecycle signals without adding binders or Instances:
+
+```luau
+zombie.TargetChanged:Connect(function(targetPlayer)
+	print("New target", targetPlayer)
+end)
+
+zombie.ReachedTarget:Connect(function(target)
+	print("Reached", target)
+end)
+
+zombie.ModeChanged:Connect(function(mode)
+	print("New physical mode", mode)
+end)
+
+zombie.Destroyed:Connect(function()
+	print("Removed")
+end)
+```
+
+Each spawned character starts with `Networking.ReplicationDistance`, which
+defaults to `Networking.CullDistance`. `SetReplicationDistance` overrides only
+that character's periodic updates and immediate state changes; global spawn and
+removal messages remain unchanged. Keep replication distance at least as large
+as cull distance if a visible NPC should never stop receiving updates before
+client culling removes its model.
 
 ## Flocking and local avoidance
 
-Set `FlockGroup` to a non-empty string to give characters in that group
+Set `Flocking.Group` to a non-empty string to give characters in that group
 server-authoritative crowd steering:
 
 ```luau
 simulatedCharacters:RegisterCharacter("Zombie", {
-	TemplateName = "Zombie",
-	FlockGroup = "Undead",
+	Template = { Name = "Zombie" },
+	Flocking = { Group = "Undead" },
 })
 ```
 
@@ -169,10 +287,10 @@ complete lightweight NPC registry. This allows an NPC to become visible as
 soon as it approaches without needing a second spawn lifecycle.
 
 Periodic movement snapshots and immediate state changes are sent only to
-players within that definition's `CullDistance`. Distance checks use X/Z and
-include `HitboxRadius`, matching the client culling boundary. When an NPC leaves
-range, the server sends one final reliable state so the client cannot leave a
-stale model visible, then stops updates until the NPC enters range again.
+players within that character's replication distance. Distance checks use X/Z
+and include `Physics.HitboxRadius`. When an NPC leaves range, the server sends
+one final reliable state so the client cannot leave a stale model visible, then
+stops updates until the NPC enters range again.
 
 ## Debug drawing
 
@@ -250,7 +368,7 @@ player reuse the same path data.
   destinations require unique flow fields.
 - Character visuals are pooled per template after culling.
 - Normal movement, navigation, and culling use X/Z only.
-- Characters without a `FlockGroup`, and characters in different groups, may
+- Characters without a `Flocking.Group`, and characters in different groups, may
   overlap. Members of one flock use soft local avoidance rather than Roblox
   physics collisions.
 - Use `GetCFrame()` and `GetHitboxSize()` for authoritative server-side combat

@@ -12,7 +12,11 @@ const require = require("../../Loader").load()
 
 const Maid = require("Maid")
 const MathUtils = require("MathUtils")
+const Signal = require("Signal")
 const SimulatedCharacterConstants = require("SimulatedCharacterConstants")
+const SimulatedCharacterFacingMode = require("SimulatedCharacterFacingMode")
+const SimulatedCharacterMovementController = require("SimulatedCharacterMovementController")
+const SimulatedCharacterTargetingMode = require("SimulatedCharacterTargetingMode")
 const SimulatedCharacterTypes = require("SimulatedCharacterTypes")
 const SimulatedCharacterUtils = require("SimulatedCharacterUtils")
 
@@ -22,6 +26,10 @@ SimulatedCharacter.__index = SimulatedCharacter
 
 export type SimulatedCharacter = typeof(setmetatable(
 	{} :: {
+		TargetChanged: Signal.Signal<Player?>,
+		ReachedTarget: Signal.Signal<any>,
+		ModeChanged: Signal.Signal<number>,
+		Destroyed: Signal.Signal<>,
 		_maid: Maid.Maid,
 		_service: any,
 		_id: number,
@@ -30,7 +38,15 @@ export type SimulatedCharacter = typeof(setmetatable(
 		_flockSeparation: Vector2,
 		_flockSteering: Vector2,
 		_definition: SimulatedCharacterTypes.ResolvedCharacterDefinition,
+		_templateName: string,
 		_replicationDistance: number,
+		_homePosition: Vector2,
+		_random: Random,
+		_nextRetargetAt: number,
+		_nextWanderAt: number,
+		_returningHome: boolean,
+		_hasReachedTarget: boolean,
+		_targetOffsetAngle: number,
 		_position: Vector2,
 		_groundY: number,
 		_height: number,
@@ -50,6 +66,7 @@ function SimulatedCharacter.new(
 	service: any,
 	id: number,
 	definition: SimulatedCharacterTypes.ResolvedCharacterDefinition,
+	templateName: string,
 	position: Vector2,
 	groundY: number,
 	yaw: number,
@@ -57,6 +74,10 @@ function SimulatedCharacter.new(
 ): SimulatedCharacter
 	const self: SimulatedCharacter = setmetatable({} :: any, SimulatedCharacter)
 	self._maid = Maid.new()
+	self.TargetChanged = self._maid:Add(Signal.new())
+	self.ReachedTarget = self._maid:Add(Signal.new())
+	self.ModeChanged = self._maid:Add(Signal.new())
+	self.Destroyed = self._maid:Add(Signal.new())
 	self._service = service
 	self._id = id
 	self._listIndex = 0
@@ -64,7 +85,15 @@ function SimulatedCharacter.new(
 	self._flockSeparation = Vector2.zero
 	self._flockSteering = Vector2.zero
 	self._definition = definition
-	self._replicationDistance = definition.CullDistance
+	self._templateName = templateName
+	self._replicationDistance = definition.ReplicationDistance
+	self._homePosition = position
+	self._random = Random.new(id)
+	self._nextRetargetAt = service:_getTime()
+	self._nextWanderAt = service:_getTime()
+	self._returningHome = false
+	self._hasReachedTarget = false
+	self._targetOffsetAngle = id * 2.399963229728653
 	self._position = position
 	self._groundY = groundY
 	self._height = 0
@@ -99,6 +128,17 @@ end
 ]=]
 function SimulatedCharacter.GetDefinitionName(self: SimulatedCharacter): string
 	return self._definition.Name
+end
+
+--[=[
+	Returns the selected visual template name. This may differ between spawned
+	characters when the definition has template variants.
+
+	@within SimulatedCharacter
+	@return string
+]=]
+function SimulatedCharacter.GetTemplateName(self: SimulatedCharacter): string
+	return self._templateName
 end
 
 --[=[
@@ -159,8 +199,10 @@ end
 ]=]
 function SimulatedCharacter.MoveTo(self: SimulatedCharacter, position: Vector2 | Vector3)
 	assert(not self._destroyed, "SimulatedCharacter is destroyed")
-	self._targetPlayer = nil
+	self:_setTargetPlayer(nil)
 	self._targetPosition = SimulatedCharacterUtils.toPlanarPosition(position)
+	self._returningHome = false
+	self._hasReachedTarget = false
 end
 
 --[=[
@@ -173,8 +215,10 @@ end
 function SimulatedCharacter.Chase(self: SimulatedCharacter, player: Player)
 	assert(not self._destroyed, "SimulatedCharacter is destroyed")
 	assert(typeof(player) == "Instance" and player:IsA("Player"), "Bad player")
-	self._targetPlayer = player
+	self:_setTargetPlayer(player)
 	self._targetPosition = nil
+	self._returningHome = false
+	self._hasReachedTarget = false
 end
 
 --[=[
@@ -183,8 +227,11 @@ end
 	@within SimulatedCharacter
 ]=]
 function SimulatedCharacter.Stop(self: SimulatedCharacter)
-	self._targetPlayer = nil
+	assert(not self._destroyed, "SimulatedCharacter is destroyed")
+	self:_setTargetPlayer(nil)
 	self._targetPosition = nil
+	self._returningHome = false
+	self._hasReachedTarget = false
 	if self._mode == SimulatedCharacterConstants.Modes.KINEMATIC then
 		self._velocity = Vector2.zero
 	end
@@ -276,11 +323,14 @@ function SimulatedCharacter.Teleport(self: SimulatedCharacter, cframe: CFrame)
 	const position = cframe.Position
 	const lookVector = cframe.LookVector
 	self._position = Vector2.new(position.X, position.Z)
-	self._groundY = position.Y
+	self._groundY = SimulatedCharacterUtils.resolveSpawnY(self._definition, position.Y)
+	self._homePosition = self._position
 	self._height = 0
 	self._yaw = math.atan2(-lookVector.X, -lookVector.Z)
 	self._velocity = Vector2.zero
 	self._verticalVelocity = 0
+	self._returningHome = false
+	self._hasReachedTarget = false
 	self._stateStartedAt = self._service:_getTime()
 	self._service:_onCharacterStateChanged(self)
 end
@@ -289,7 +339,7 @@ function SimulatedCharacter._getTarget(self: SimulatedCharacter): (Vector2?, any
 	const targetPlayer = self._targetPlayer
 	if targetPlayer then
 		if targetPlayer.Parent ~= Players then
-			self._targetPlayer = nil
+			self:_setTargetPlayer(nil)
 			return nil, nil
 		end
 
@@ -297,7 +347,17 @@ function SimulatedCharacter._getTarget(self: SimulatedCharacter): (Vector2?, any
 		const root = playerCharacter
 			and (playerCharacter:FindFirstChild("HumanoidRootPart") or playerCharacter.PrimaryPart)
 		if root and root:IsA("BasePart") then
-			return Vector2.new(root.Position.X, root.Position.Z), targetPlayer
+			local targetPosition = Vector2.new(root.Position.X, root.Position.Z)
+			if self._definition.MovementController == SimulatedCharacterMovementController.ORBIT then
+				const angle = self._service:_getTime() * self._definition.OrbitSpeed + self._targetOffsetAngle
+				targetPosition += Vector2.new(math.cos(angle), math.sin(angle)) * self._definition.OrbitRadius
+				return targetPosition, self._id
+			elseif self._definition.TargetOffset > 0 then
+				targetPosition += Vector2.new(math.cos(self._targetOffsetAngle), math.sin(self._targetOffsetAngle)) * self._definition.TargetOffset
+				return targetPosition, self._id
+			end
+
+			return targetPosition, targetPlayer
 		end
 		return nil, nil
 	end
@@ -305,15 +365,133 @@ function SimulatedCharacter._getTarget(self: SimulatedCharacter): (Vector2?, any
 	return self._targetPosition, self._id
 end
 
-function SimulatedCharacter._step(self: SimulatedCharacter, deltaTime: number, navigation: any?)
+function SimulatedCharacter._step(
+	self: SimulatedCharacter,
+	deltaTime: number,
+	navigation: any?,
+	targetCandidates: { SimulatedCharacterTypes.TargetCandidate }
+)
 	if self._destroyed then
 		return
 	end
 
 	if self._mode == SimulatedCharacterConstants.Modes.KINEMATIC then
+		self:_stepController(targetCandidates)
 		self:_stepKinematic(deltaTime, navigation)
 	else
 		self:_stepPhysical(deltaTime, navigation)
+	end
+end
+
+function SimulatedCharacter._stepController(
+	self: SimulatedCharacter,
+	targetCandidates: { SimulatedCharacterTypes.TargetCandidate }
+)
+	const definition = self._definition
+	const controller = definition.MovementController
+	const automaticTargeting = definition.TargetingMode == SimulatedCharacterTargetingMode.NEAREST_PLAYER
+	if controller == SimulatedCharacterMovementController.MANUAL and not automaticTargeting then
+		return
+	end
+
+	const now = self._service:_getTime()
+	const homeDelta = self._position - self._homePosition
+	if homeDelta:Dot(homeDelta) > definition.LeashRange * definition.LeashRange then
+		self:_setTargetPlayer(nil)
+		self._targetPosition = self._homePosition
+		self._returningHome = true
+		self._hasReachedTarget = false
+		return
+	end
+	if self._returningHome then
+		const homeStoppingDistance = math.min(definition.StoppingDistance, definition.LeashRange)
+		if homeDelta.Magnitude > homeStoppingDistance then
+			self._targetPosition = self._homePosition
+			return
+		end
+		self._targetPosition = nil
+		self._returningHome = false
+	end
+
+	if automaticTargeting and now >= self._nextRetargetAt then
+		self._nextRetargetAt = now + definition.RetargetInterval
+		self:_retargetNearestPlayer(targetCandidates)
+	end
+
+	if self._targetPlayer then
+		self._targetPosition = nil
+		self._returningHome = false
+		return
+	end
+
+	if controller == SimulatedCharacterMovementController.WANDER then
+		if self._targetPosition == nil or (self._hasReachedTarget and now >= self._nextWanderAt) then
+			const radius = math.sqrt(self._random:NextNumber()) * definition.WanderRadius
+			const angle = self._random:NextNumber(0, 2 * math.pi)
+			self._targetPosition = self._homePosition + Vector2.new(math.cos(angle), math.sin(angle)) * radius
+			self._nextWanderAt = now + definition.WanderInterval
+			self._returningHome = false
+			self._hasReachedTarget = false
+		end
+	elseif
+		controller == SimulatedCharacterMovementController.GUARD
+		or controller == SimulatedCharacterMovementController.ORBIT
+	then
+		const distanceFromHome = homeDelta.Magnitude
+		if distanceFromHome > definition.StoppingDistance then
+			if not self._returningHome then
+				self._hasReachedTarget = false
+			end
+			self._targetPosition = self._homePosition
+			self._returningHome = true
+		else
+			self._targetPosition = nil
+			self._returningHome = false
+		end
+	elseif controller == SimulatedCharacterMovementController.CHASE then
+		self._targetPosition = nil
+	end
+end
+
+function SimulatedCharacter._retargetNearestPlayer(
+	self: SimulatedCharacter,
+	targetCandidates: { SimulatedCharacterTypes.TargetCandidate }
+)
+	const definition = self._definition
+	const currentTarget = self._targetPlayer
+	if currentTarget then
+		for _, candidate in targetCandidates do
+			if candidate.Player == currentTarget then
+				const homeDelta = candidate.Position - self._homePosition
+				if homeDelta:Dot(homeDelta) <= definition.LeashRange * definition.LeashRange then
+					return
+				end
+				break
+			end
+		end
+	end
+
+	local nearestPlayer = nil
+	local nearestDistanceSquared = definition.AggroRange * definition.AggroRange
+	const leashDistanceSquared = definition.LeashRange * definition.LeashRange
+	for _, candidate in targetCandidates do
+		const homeDelta = candidate.Position - self._homePosition
+		if homeDelta:Dot(homeDelta) > leashDistanceSquared then
+			continue
+		end
+
+		const targetDelta = candidate.Position - self._position
+		const distanceSquared = targetDelta:Dot(targetDelta)
+		if distanceSquared <= nearestDistanceSquared then
+			nearestPlayer = candidate.Player
+			nearestDistanceSquared = distanceSquared
+		end
+	end
+
+	self:_setTargetPlayer(nearestPlayer)
+	if nearestPlayer then
+		self._targetPosition = nil
+		self._returningHome = false
 	end
 end
 
@@ -326,7 +504,18 @@ function SimulatedCharacter._stepKinematic(self: SimulatedCharacter, deltaTime: 
 
 	const targetDelta = targetPosition - self._position
 	const distance = targetDelta.Magnitude
-	const arrived = distance <= self._definition.StoppingDistance
+	const stoppingDistance = if self._returningHome
+		then math.min(self._definition.StoppingDistance, self._definition.LeashRange)
+		else self._definition.StoppingDistance
+	const arrived = distance <= stoppingDistance
+	if arrived then
+		if not self._hasReachedTarget then
+			self._hasReachedTarget = true
+			self.ReachedTarget:Fire(self._targetPlayer or targetPosition)
+		end
+	else
+		self._hasReachedTarget = false
+	end
 	local pathDirection = Vector2.zero
 	if not arrived then
 		const navigationDirection = if navigation
@@ -334,6 +523,9 @@ function SimulatedCharacter._stepKinematic(self: SimulatedCharacter, deltaTime: 
 			else targetDelta.Unit
 		if not navigationDirection or navigationDirection.Magnitude < 1e-4 then
 			self._velocity = Vector2.zero
+			if self._definition.FacingMode == SimulatedCharacterFacingMode.TARGET_ALWAYS then
+				self:_turnTowards(targetDelta / distance, deltaTime)
+			end
 			return
 		end
 		pathDirection = navigationDirection
@@ -349,14 +541,14 @@ function SimulatedCharacter._stepKinematic(self: SimulatedCharacter, deltaTime: 
 	end
 	if direction.Magnitude < 1e-4 then
 		self._velocity = Vector2.zero
-		if arrived and distance > 1e-4 then
+		if arrived and distance > 1e-4 and self._definition.FacingMode ~= SimulatedCharacterFacingMode.MOVEMENT then
 			self:_turnTowards(targetDelta / distance, deltaTime)
 		end
 		return
 	end
 	direction = direction.Unit
 
-	const maximumDistance = math.max(0, distance - self._definition.StoppingDistance)
+	const maximumDistance = math.max(0, distance - stoppingDistance)
 	const movementDistance = if arrived
 		then self._definition.MoveSpeed * deltaTime
 		else math.min(self._definition.MoveSpeed * deltaTime, maximumDistance)
@@ -365,7 +557,7 @@ function SimulatedCharacter._stepKinematic(self: SimulatedCharacter, deltaTime: 
 		const pathPosition = self._position + pathDirection * movementDistance
 		if arrived or pathDirection.Magnitude < 1e-4 or not navigation:CanMove(self._position, pathPosition) then
 			self._velocity = Vector2.zero
-			if arrived and distance > 1e-4 then
+			if arrived and distance > 1e-4 and self._definition.FacingMode ~= SimulatedCharacterFacingMode.MOVEMENT then
 				self:_turnTowards(targetDelta / distance, deltaTime)
 			end
 			return
@@ -376,7 +568,12 @@ function SimulatedCharacter._stepKinematic(self: SimulatedCharacter, deltaTime: 
 
 	self._velocity = if deltaTime > 0 then (nextPosition - self._position) / deltaTime else Vector2.zero
 	self._position = nextPosition
-	self:_turnTowards(if arrived and distance > 1e-4 then targetDelta / distance else direction, deltaTime)
+	const faceTarget = distance > 1e-4
+		and (
+			self._definition.FacingMode == SimulatedCharacterFacingMode.TARGET_ALWAYS
+			or (arrived and self._definition.FacingMode == SimulatedCharacterFacingMode.TARGET_WHEN_STOPPED)
+		)
+	self:_turnTowards(if faceTarget then targetDelta / distance else direction, deltaTime)
 end
 
 function SimulatedCharacter._stepPhysical(self: SimulatedCharacter, deltaTime: number, navigation: any?)
@@ -434,7 +631,18 @@ function SimulatedCharacter._setMode(self: SimulatedCharacter, mode: number)
 
 	self._mode = mode
 	self._stateStartedAt = self._service:_getTime()
+	self.ModeChanged:Fire(mode)
 	self._service:_onCharacterStateChanged(self)
+end
+
+function SimulatedCharacter._setTargetPlayer(self: SimulatedCharacter, player: Player?)
+	if self._targetPlayer == player then
+		return
+	end
+
+	self._targetPlayer = player
+	self._hasReachedTarget = false
+	self.TargetChanged:Fire(player)
 end
 
 function SimulatedCharacter._getNetworkState(self: SimulatedCharacter): SimulatedCharacterTypes.NetworkState
@@ -459,6 +667,7 @@ function SimulatedCharacter._destroyInternal(self: SimulatedCharacter)
 	end
 
 	self._destroyed = true
+	self.Destroyed:Fire()
 	self._service = nil
 	self._maid:DoCleaning()
 end
