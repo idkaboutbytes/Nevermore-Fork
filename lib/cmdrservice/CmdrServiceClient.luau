@@ -14,6 +14,7 @@ const PromiseUtils = require("PromiseUtils")
 const PromiseInstanceUtils = require("PromiseInstanceUtils")
 const ServiceBag = require("ServiceBag")
 const StringUtils = require("StringUtils")
+const CmdrServiceNetwork = require("CmdrServiceNetwork")
 
 const Player = Players.LocalPlayer
 
@@ -37,6 +38,17 @@ function CmdrServiceClient.Init(self: CmdrServiceClient, serviceBag: ServiceBag.
 	self._serviceBag = assert(serviceBag, "No serviceBag")
 	self._maid = Maid.new()
 	self._permissionServiceClient = self._serviceBag:GetService(PermissionServiceClient)
+
+	-- Listening before asking, so a command registered on the server between our
+	-- request and our registry coming up is not missed. Re-registering is
+	-- harmless -- Cmdr replaces by name.
+	CmdrServiceNetwork.packets.commandsReplicated.listen(function(definitions: { any })
+		self:PromiseCmdr():Then(function(cmdrClient)
+			for _, definition in definitions do
+				cmdrClient.Registry:RegisterCommandObject(definition)
+			end
+		end)
+	end)
 
 	self:PromiseCmdr():Then(function(cmdrClient)
 		local store = cmdrClient.Registry:GetStore("ServiceBag")
@@ -73,6 +85,8 @@ function CmdrServiceClient.Start(self: CmdrServiceClient)
 			self._permissionServiceClient:PromisePermissionProvider(),
 		})
 			:Then(function(cmdrClient, permissionProvider)
+				CmdrServiceNetwork.packets.commandsRequested.send(nil)
+
 				self._maid:GiveTask(permissionProvider:ObserveIsAdmin():Subscribe(function(isAdmin)
 					if isAdmin then
 						self._setCmdrBindings(self, cmdrClient)
