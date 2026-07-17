@@ -3,7 +3,7 @@
     @utils CmdrServiceUtils
 ]=]
 
-const require = require("../loader").load()
+const require = require("../../Loader").load()
 
 const ServiceBag = require("ServiceBag")
 
