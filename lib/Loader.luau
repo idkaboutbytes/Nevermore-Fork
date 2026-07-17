@@ -18,6 +18,13 @@
 	@class Loader
 ]=]
 
+const ReplicatedStorage = game:GetService("ReplicatedStorage")
+const RunService = game:GetService("RunService")
+const ServerScriptService = game:GetService("ServerScriptService")
+const ServerStorage = game:GetService("ServerStorage")
+const StarterPlayer = game:GetService("StarterPlayer")
+const IsServer = RunService:IsServer()
+
 const DependencyNameCache = {} -- [string] = ModuleScript
 const DependencySourceCache = {} -- [string | Instance] = any
 
@@ -228,7 +235,11 @@ function Loader.load(...: Instance?): (any) -> any
 	local packageRoots: { Instance }
 
 	if (...) == nil then
-		packageRoots = { script.Parent :: any }
+		if IsServer then
+			packageRoots = { ServerScriptService, ServerStorage, ReplicatedStorage }
+		else
+			packageRoots = { ReplicatedStorage, StarterPlayer }
+		end
 	else
 		packageRoots = normalizePackageRoots(script.Parent :: any, ... :: Instance)
 	end
