@@ -107,7 +107,7 @@ end
 ]=]
 function BanService.BanDurationAsync(self: BanService, player: Player, seconds: number): Promise.Promise<()>
 	assert(t.instanceIsA("Player")(player), "Bad player")
-	assert(MathUtils.isFinite(seconds), "Bad number")
+	assert(t.numberPositive(seconds), "Bad number")
 
 	return self:_banAsync(player, seconds)
 end
