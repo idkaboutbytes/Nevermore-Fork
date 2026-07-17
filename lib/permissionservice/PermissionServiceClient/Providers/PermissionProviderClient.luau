@@ -37,10 +37,9 @@ function PermissionProviderClient.new(): PermissionProviderClient
 
 	self._maid = Maid.new()
 	self._isAdminPromise = self._maid:GivePromise(Promise.new())
-
-	self._maid:GiveTask(PermissionServiceNetwork.packets.permissionsLoaded.listen(function(value: { isAdmin: boolean })
+	PermissionServiceNetwork.packets.permissionsLoaded.listen(function(value: { isAdmin: boolean })
 		self._isAdminPromise:Resolve(value.isAdmin)
-	end))
+	end)
 
 	return self
 end

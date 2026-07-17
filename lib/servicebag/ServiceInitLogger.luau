@@ -29,6 +29,7 @@ export type ServiceInitLogger = typeof(setmetatable(
 		_totalTimeUsed: number,
 		_initIndent: number,
 		_totalServices: number,
+		_activeServices: number,
 	},
 	{} :: typeof({ __index = ServiceInitLogger })
 ))
@@ -47,6 +48,7 @@ function ServiceInitLogger.new(action: string): ServiceInitLogger
 	self._totalTimeUsed = 0
 	self._initIndent = 0
 	self._totalServices = 0
+	self._activeServices = 0
 
 	return self
 end
@@ -62,6 +64,7 @@ function ServiceInitLogger.StartInitClock(self: ServiceInitLogger, serviceName: 
 
 	self._initIndent = initialIndent + 1
 	self._totalServices = self._totalServices + 1
+	self._activeServices = self._activeServices + 1
 
 	local parent: LogEntry = self._stack[#self._stack]
 	local entry: LogEntry = {
@@ -69,6 +72,7 @@ function ServiceInitLogger.StartInitClock(self: ServiceInitLogger, serviceName: 
 		children = {},
 		log = string.format("%s%sService is not loaded", string.rep("  ", initialIndent), serviceName),
 	}
+
 	table.insert(parent.children, entry)
 	table.insert(self._stack, entry)
 
@@ -87,6 +91,7 @@ function ServiceInitLogger.StartInitClock(self: ServiceInitLogger, serviceName: 
 
 		self._totalTimeUsed = self._totalTimeUsed + internalTimeUsed
 		self._initIndent = self._initIndent - 1
+		self._activeServices = self._activeServices - 1
 
 		if math.abs(internalTimeUsed - timeUsed) <= EPSILON then
 			entry.log = string.format(
@@ -108,6 +113,11 @@ function ServiceInitLogger.StartInitClock(self: ServiceInitLogger, serviceName: 
 			)
 		end
 
+		-- Print only after the last service finishes
+		if self._activeServices == 0 then
+			self:Print()
+		end
+
 		return {
 			InternalTimeUsed = internalTimeUsed,
 			TotalTimeUsed = timeUsed,
@@ -122,7 +132,10 @@ end
 
 function ServiceInitLogger.Print(self: ServiceInitLogger)
 	local function recurse(node: LogEntry)
-		print(node.log)
+		if node.log then
+			print(node.log)
+		end
+
 		for _, childNode in node.children do
 			recurse(childNode)
 		end
