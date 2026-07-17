@@ -114,9 +114,9 @@ function ServiceInitLogger.StartInitClock(self: ServiceInitLogger, serviceName: 
 		end
 
 		-- Print only after the last service finishes
-		if self._activeServices == 0 then
-			self:Print()
-		end
+		-- if self._activeServices == 0 then
+		-- 	self:Print()
+		-- end
 
 		return {
 			InternalTimeUsed = internalTimeUsed,

@@ -20,6 +20,7 @@ const Rx = require("Rx")
 const t = require("t")
 const Promise = require("Promise")
 const PromiseUtils = require("PromiseUtils")
+const PromiseMaidUtils = require("PromiseMaidUtils")
 const BindToCloseService = require("BindToCloseService")
 const Squash = require("Squash")
 const TableUtils = require("TableUtils")
@@ -365,6 +366,60 @@ end
 function DataService.GetProfile(self: DataService, player: Player): ProfileStore.Profile<any>?
 	assert(t.instanceIsA("Player")(player), "Bad player")
 	return self._profileList:Get(player) or nil
+end
+
+--[=[
+	Waits for a player's profile, resolving as soon as it is loaded.
+
+	Only ever waits -- unlike [DataService.LoadProfileAsync] it never starts a
+	session, so it is what you want from anything that merely needs the profile
+	rather than owns loading it. [DataService.Start] does the loading.
+
+	Rejects if the player leaves first, so a caller cannot be left waiting on a
+	profile that is never coming.
+
+	```lua
+	DataService:PromiseProfile(player):Then(function(profile)
+		print(profile.Data.Coins)
+	end)
+	```
+
+	@within DataService
+	@param player Player
+	@returns Promise<ProfileStore.Profile<any>>
+]=]
+function DataService.PromiseProfile(self: DataService, player: Player): Promise.Promise<any>
+	assert(t.instanceIsA("Player")(player), "Bad player")
+
+	const profile = self:GetProfile(player)
+	if profile then
+		return Promise.resolved(profile)
+	end
+
+	const promise = Promise.new()
+
+	-- whilePromise owns the listeners for exactly as long as the promise is
+	-- pending. Keyed into the service maid on top of that, so a Destroy while we
+	-- are still waiting takes them with it.
+	self._maid[promise] = PromiseMaidUtils.whilePromise(promise, function(maid: Maid.Maid)
+		maid:GiveTask(self._profileList:ObserveAtKey(player):Subscribe(function(profileValue: any)
+			if profileValue then
+				promise:Resolve(profileValue)
+			end
+		end))
+
+		maid:GiveTask(Players.PlayerRemoving:Connect(function(removingPlayer: Player)
+			if removingPlayer == player then
+				promise:Reject("Player left before their profile loaded")
+			end
+		end))
+	end)
+
+	promise:Finally(function()
+		self._maid[promise] = nil
+	end)
+
+	return promise
 end
 
 --[=[
