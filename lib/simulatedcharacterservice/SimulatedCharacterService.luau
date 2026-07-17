@@ -9,6 +9,7 @@
 ]=]
 
 const CollectionService = game:GetService("CollectionService")
+const Players = game:GetService("Players")
 const RunService = game:GetService("RunService")
 
 const require = require("../Loader").load()
@@ -17,6 +18,7 @@ const Maid = require("Maid")
 const ServiceBag = require("ServiceBag")
 const SimulatedCharacter = require("SimulatedCharacter")
 const SimulatedCharacterConstants = require("SimulatedCharacterConstants")
+const SimulatedCharacterFlocking = require("SimulatedCharacterFlocking")
 const SimulatedCharacterNavigationGrid = require("SimulatedCharacterNavigationGrid")
 const SimulatedCharacterNetwork = require("SimulatedCharacterNetwork")
 const SimulatedCharacterTemplateProvider = require("SimulatedCharacterTemplateProvider")
@@ -24,6 +26,8 @@ const SimulatedCharacterTypes = require("SimulatedCharacterTypes")
 const SimulatedCharacterUtils = require("SimulatedCharacterUtils")
 const TableUtils = require("TableUtils")
 const TimeSyncService = require("TimeSyncService")
+
+const DEBUG_REQUEST_COOLDOWN = 0.15
 
 const SimulatedCharacterService = {}
 SimulatedCharacterService.ServiceName = "SimulatedCharacterService"
@@ -40,6 +44,9 @@ export type SimulatedCharacterService = typeof(setmetatable(
 		_definitions: { [string]: SimulatedCharacterTypes.ResolvedCharacterDefinition },
 		_charactersById: { [number]: SimulatedCharacter.SimulatedCharacter },
 		_characters: { SimulatedCharacter.SimulatedCharacter },
+		_flocking: SimulatedCharacterFlocking.SimulatedCharacterFlocking,
+		_networkInterestByPlayer: { [Player]: { [number]: boolean } },
+		_lastDebugRequestByPlayer: { [Player]: number },
 		_nextCharacterId: number,
 		_navigation: SimulatedCharacterNavigationGrid.SimulatedCharacterNavigationGrid?,
 		_simulationAccumulator: number,
@@ -55,6 +62,9 @@ function SimulatedCharacterService.Init(self: SimulatedCharacterService, service
 	self._definitions = {}
 	self._charactersById = {}
 	self._characters = {}
+	self._flocking = self._maid:Add(SimulatedCharacterFlocking.new())
+	self._networkInterestByPlayer = {}
+	self._lastDebugRequestByPlayer = {}
 	self._nextCharacterId = 1
 	self._navigation = nil
 	self._templateContainer = nil
@@ -68,8 +78,25 @@ function SimulatedCharacterService.Init(self: SimulatedCharacterService, service
 		if not player then
 			return {}
 		end
-		return self:_getInitialState()
+		return self:_getInitialState(player)
 	end)
+	SimulatedCharacterNetwork.packets.debugRequested.listen(function(_, player: Player?)
+		if not player then
+			return
+		end
+
+		const now = os.clock()
+		const lastRequest = self._lastDebugRequestByPlayer[player]
+		if lastRequest and now - lastRequest < DEBUG_REQUEST_COOLDOWN then
+			return
+		end
+		self._lastDebugRequestByPlayer[player] = now
+		self:_sendDebugSnapshot(player)
+	end)
+	self._maid:Add(Players.PlayerRemoving:Connect(function(player: Player)
+		self._networkInterestByPlayer[player] = nil
+		self._lastDebugRequestByPlayer[player] = nil
+	end))
 end
 
 --[=[
@@ -211,8 +238,15 @@ function SimulatedCharacterService.SpawnCharacter(
 	character._listIndex = #self._characters + 1
 	self._charactersById[id] = character
 	table.insert(self._characters, character)
+	self._flocking:AddCharacter(character)
 
 	SimulatedCharacterNetwork.packets.spawned.sendToAll(self:_toNetworkSpawn(character))
+	for _, player in Players:GetPlayers() do
+		const playerPosition = self:_getPlayerPosition(player)
+		if playerPosition and self:_isCharacterInRange(character, playerPosition) then
+			self:_getPlayerNetworkInterest(player)[id] = true
+		end
+	end
 	return character
 end
 
@@ -235,6 +269,10 @@ function SimulatedCharacterService.RemoveCharacter(
 
 	const id = character._id
 	self._charactersById[id] = nil
+	self._flocking:RemoveCharacter(character)
+	for _, interest in self._networkInterestByPlayer do
+		interest[id] = nil
+	end
 	const index = character._listIndex
 	const lastCharacter = self._characters[#self._characters]
 	TableUtils.swapRemove(self._characters, index)
@@ -287,6 +325,7 @@ function SimulatedCharacterService._step(self: SimulatedCharacterService, deltaT
 	while simulationAccumulator >= simulationStep and simulationCount < 5 do
 		simulationAccumulator -= simulationStep
 		simulationCount += 1
+		self._flocking:Step()
 		for _, character in self._characters do
 			character:_step(simulationStep, self._navigation)
 		end
@@ -306,15 +345,38 @@ function SimulatedCharacterService._sendSnapshot(self: SimulatedCharacterService
 		return
 	end
 
-	const states = table.create(#self._characters)
+	const serverTime = self:_getTime()
+	const networkStates = table.create(#self._characters)
 	for index, character in self._characters do
-		states[index] = character:_getNetworkState()
+		networkStates[index] = character:_getNetworkState()
 	end
 
-	SimulatedCharacterNetwork.packets.snapshot.sendToAll({
-		serverTime = self:_getTime(),
-		characters = states,
-	})
+	for _, player in Players:GetPlayers() do
+		const playerPosition = self:_getPlayerPosition(player)
+		const interest = self:_getPlayerNetworkInterest(player)
+		const states = table.create(#self._characters)
+		for index, character in self._characters do
+			const id = character._id
+			const inRange = playerPosition ~= nil and self:_isCharacterInRange(character, playerPosition)
+			if inRange then
+				interest[id] = true
+				table.insert(states, networkStates[index])
+			elseif interest[id] then
+				interest[id] = nil
+				SimulatedCharacterNetwork.packets.stateChanged.sendTo({
+					serverTime = serverTime,
+					state = networkStates[index],
+				}, player)
+			end
+		end
+
+		if #states > 0 then
+			SimulatedCharacterNetwork.packets.snapshot.sendTo({
+				serverTime = serverTime,
+				characters = states,
+			}, player)
+		end
+	end
 end
 
 function SimulatedCharacterService._onCharacterStateChanged(
@@ -322,11 +384,102 @@ function SimulatedCharacterService._onCharacterStateChanged(
 	character: SimulatedCharacter.SimulatedCharacter
 )
 	if self._charactersById[character._id] == character then
-		SimulatedCharacterNetwork.packets.stateChanged.sendToAll({
+		const data = {
 			serverTime = self:_getTime(),
 			state = character:_getNetworkState(),
-		})
+		}
+		for _, player in Players:GetPlayers() do
+			const interest = self:_getPlayerNetworkInterest(player)
+			const playerPosition = self:_getPlayerPosition(player)
+			const inRange = playerPosition ~= nil and self:_isCharacterInRange(character, playerPosition)
+			if inRange or interest[character._id] then
+				SimulatedCharacterNetwork.packets.stateChanged.sendTo(data, player)
+			end
+			if inRange then
+				interest[character._id] = true
+			else
+				interest[character._id] = nil
+			end
+		end
 	end
+end
+
+function SimulatedCharacterService._getPlayerNetworkInterest(
+	self: SimulatedCharacterService,
+	player: Player
+): { [number]: boolean }
+	local interest = self._networkInterestByPlayer[player]
+	if not interest then
+		interest = {}
+		self._networkInterestByPlayer[player] = interest
+	end
+	return interest
+end
+
+function SimulatedCharacterService._getPlayerPosition(_self: SimulatedCharacterService, player: Player): Vector2?
+	const playerCharacter = player.Character
+	const root = playerCharacter and (playerCharacter:FindFirstChild("HumanoidRootPart") or playerCharacter.PrimaryPart)
+	if root and root:IsA("BasePart") then
+		return Vector2.new(root.Position.X, root.Position.Z)
+	end
+	return nil
+end
+
+function SimulatedCharacterService._isCharacterInRange(
+	_self: SimulatedCharacterService,
+	character: SimulatedCharacter.SimulatedCharacter,
+	playerPosition: Vector2
+): boolean
+	const delta = character._position - playerPosition
+	const distance = character._definition.CullDistance + character._definition.HitboxRadius
+	return delta:Dot(delta) <= distance * distance
+end
+
+function SimulatedCharacterService._sendDebugSnapshot(self: SimulatedCharacterService, player: Player)
+	const playerPosition = self:_getPlayerPosition(player)
+	const debugCharacters: { SimulatedCharacterTypes.NetworkDebugCharacter } = {}
+	if playerPosition then
+		for _, character in self._characters do
+			if not self:_isCharacterInRange(character, playerPosition) then
+				continue
+			end
+
+			local targetPosition, targetKey = character:_getTarget()
+			const path: { SimulatedCharacterTypes.NetworkDebugPoint } = {}
+			if targetPosition and targetKey ~= nil then
+				const planarPath = if self._navigation
+					then self._navigation:_getDebugPath(character._position, targetKey, targetPosition)
+					else { character._position, targetPosition }
+				for index, point in planarPath do
+					path[index] = {
+						x = point.X,
+						z = point.Y,
+					}
+				end
+			end
+
+			table.insert(debugCharacters, {
+				id = character._id,
+				hitboxHeight = character._definition.HitboxHeight,
+				stoppingDistance = character._definition.StoppingDistance,
+				hasFlock = character._definition.FlockGroup ~= "",
+				hasTarget = targetPosition ~= nil,
+				targetX = if targetPosition then targetPosition.X else 0,
+				targetZ = if targetPosition then targetPosition.Y else 0,
+				path = path,
+			})
+		end
+	end
+
+	const navigation = self._navigation
+	SimulatedCharacterNetwork.packets.debugSnapshot.sendTo({
+		hasNavigation = navigation ~= nil,
+		navigationMinX = if navigation then navigation._min.X else 0,
+		navigationMinZ = if navigation then navigation._min.Y else 0,
+		navigationMaxX = if navigation then navigation._max.X else 0,
+		navigationMaxZ = if navigation then navigation._max.Y else 0,
+		characters = debugCharacters,
+	}, player)
 end
 
 function SimulatedCharacterService._toNetworkDefinition(
@@ -356,11 +509,18 @@ function SimulatedCharacterService._toNetworkSpawn(
 end
 
 function SimulatedCharacterService._getInitialState(
-	self: SimulatedCharacterService
+	self: SimulatedCharacterService,
+	player: Player
 ): { SimulatedCharacterTypes.NetworkSpawn }
+	const interest = self:_getPlayerNetworkInterest(player)
+	table.clear(interest)
+	const playerPosition = self:_getPlayerPosition(player)
 	const result = table.create(#self._characters)
 	for index, character in self._characters do
 		result[index] = self:_toNetworkSpawn(character)
+		if playerPosition and self:_isCharacterInRange(character, playerPosition) then
+			interest[character._id] = true
+		end
 	end
 	return result
 end

@@ -26,6 +26,9 @@ export type SimulatedCharacter = typeof(setmetatable(
 		_service: any,
 		_id: number,
 		_listIndex: number,
+		_flockIndex: number,
+		_flockSeparation: Vector2,
+		_flockSteering: Vector2,
 		_definition: SimulatedCharacterTypes.ResolvedCharacterDefinition,
 		_position: Vector2,
 		_groundY: number,
@@ -56,6 +59,9 @@ function SimulatedCharacter.new(
 	self._service = service
 	self._id = id
 	self._listIndex = 0
+	self._flockIndex = 0
+	self._flockSeparation = Vector2.zero
+	self._flockSteering = Vector2.zero
 	self._definition = definition
 	self._position = position
 	self._groundY = groundY
@@ -300,31 +306,57 @@ function SimulatedCharacter._stepKinematic(self: SimulatedCharacter, deltaTime: 
 
 	const targetDelta = targetPosition - self._position
 	const distance = targetDelta.Magnitude
-	if distance <= self._definition.StoppingDistance then
-		self._velocity = Vector2.zero
-		return
+	const arrived = distance <= self._definition.StoppingDistance
+	local pathDirection = Vector2.zero
+	if not arrived then
+		const navigationDirection = if navigation
+			then navigation:GetDirection(self._position, targetKey, targetPosition)
+			else targetDelta.Unit
+		if not navigationDirection or navigationDirection.Magnitude < 1e-4 then
+			self._velocity = Vector2.zero
+			return
+		end
+		pathDirection = navigationDirection
 	end
 
-	const direction = if navigation
-		then navigation:GetDirection(self._position, targetKey, targetPosition)
-		else targetDelta.Unit
-	if not direction or direction.Magnitude < 1e-4 then
+	local direction = if arrived then self._flockSeparation else pathDirection + self._flockSteering
+	if arrived and distance > 1e-4 then
+		const towardTarget = targetDelta / distance
+		const towardTargetAmount = direction:Dot(towardTarget)
+		if towardTargetAmount > 0 then
+			direction -= towardTarget * towardTargetAmount
+		end
+	end
+	if direction.Magnitude < 1e-4 then
 		self._velocity = Vector2.zero
+		if arrived and distance > 1e-4 then
+			self:_turnTowards(targetDelta / distance, deltaTime)
+		end
 		return
 	end
+	direction = direction.Unit
 
 	const maximumDistance = math.max(0, distance - self._definition.StoppingDistance)
-	const movementDistance = math.min(self._definition.MoveSpeed * deltaTime, maximumDistance)
-	const nextPosition = self._position + direction * movementDistance
+	const movementDistance = if arrived
+		then self._definition.MoveSpeed * deltaTime
+		else math.min(self._definition.MoveSpeed * deltaTime, maximumDistance)
+	local nextPosition = self._position + direction * movementDistance
 	if navigation and not navigation:CanMove(self._position, nextPosition) then
-		self._velocity = Vector2.zero
-		return
+		const pathPosition = self._position + pathDirection * movementDistance
+		if arrived or pathDirection.Magnitude < 1e-4 or not navigation:CanMove(self._position, pathPosition) then
+			self._velocity = Vector2.zero
+			if arrived and distance > 1e-4 then
+				self:_turnTowards(targetDelta / distance, deltaTime)
+			end
+			return
+		end
+		direction = pathDirection
+		nextPosition = pathPosition
 	end
 
 	self._velocity = if deltaTime > 0 then (nextPosition - self._position) / deltaTime else Vector2.zero
 	self._position = nextPosition
-	const targetYaw = math.atan2(-direction.X, -direction.Y)
-	self._yaw = SimulatedCharacterUtils.moveAngleTowards(self._yaw, targetYaw, self._definition.TurnSpeed * deltaTime)
+	self:_turnTowards(if arrived and distance > 1e-4 then targetDelta / distance else direction, deltaTime)
 end
 
 function SimulatedCharacter._stepPhysical(self: SimulatedCharacter, deltaTime: number, navigation: any?)
@@ -362,10 +394,17 @@ function SimulatedCharacter._stepPhysical(self: SimulatedCharacter, deltaTime: n
 	end
 
 	if self._velocity.Magnitude > 1e-4 then
-		const targetYaw = math.atan2(-self._velocity.X, -self._velocity.Y)
-		self._yaw =
-			SimulatedCharacterUtils.moveAngleTowards(self._yaw, targetYaw, self._definition.TurnSpeed * deltaTime)
+		self:_turnTowards(self._velocity, deltaTime)
 	end
+end
+
+function SimulatedCharacter._turnTowards(self: SimulatedCharacter, direction: Vector2, deltaTime: number)
+	if direction.Magnitude < 1e-4 then
+		return
+	end
+
+	const targetYaw = math.atan2(-direction.X, -direction.Y)
+	self._yaw = SimulatedCharacterUtils.moveAngleTowards(self._yaw, targetYaw, self._definition.TurnSpeed * deltaTime)
 end
 
 function SimulatedCharacter._setMode(self: SimulatedCharacter, mode: number)

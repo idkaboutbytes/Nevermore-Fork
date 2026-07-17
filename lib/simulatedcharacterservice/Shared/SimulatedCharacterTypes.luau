@@ -18,6 +18,7 @@ export type CharacterDefinition = {
 	IdleAnimationId: string?,
 	WalkAnimationId: string?,
 	UseDefaultAnimations: boolean?,
+	FlockGroup: string?,
 }
 
 export type ResolvedCharacterDefinition = {
@@ -34,6 +35,7 @@ export type ResolvedCharacterDefinition = {
 	IdleAnimationId: string,
 	WalkAnimationId: string,
 	UseDefaultAnimations: boolean,
+	FlockGroup: string,
 }
 
 export type NavigationConfig = {
@@ -85,6 +87,31 @@ export type NetworkSpawn = {
 export type NetworkSnapshot = {
 	serverTime: number,
 	characters: { NetworkState },
+}
+
+export type NetworkDebugPoint = {
+	x: number,
+	z: number,
+}
+
+export type NetworkDebugCharacter = {
+	id: number,
+	hitboxHeight: number,
+	stoppingDistance: number,
+	hasFlock: boolean,
+	hasTarget: boolean,
+	targetX: number,
+	targetZ: number,
+	path: { NetworkDebugPoint },
+}
+
+export type NetworkDebugSnapshot = {
+	hasNavigation: boolean,
+	navigationMinX: number,
+	navigationMinZ: number,
+	navigationMaxX: number,
+	navigationMaxZ: number,
+	characters: { NetworkDebugCharacter },
 }
 
 return table.freeze({})

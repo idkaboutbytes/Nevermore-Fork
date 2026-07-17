@@ -5,13 +5,14 @@ a flat X/Z plane. The server stores numbers rather than physical character
 models. Each client clones, animates, interpolates, ragdolls, and culls its own
 visual models.
 
-The package is designed for dozens of NPCs that may overlap. It deliberately
-does not perform NPC-to-NPC avoidance.
+The package is designed for dozens of NPCs. Characters may overlap by default,
+or use optional flock groups for lightweight local avoidance and coordinated
+movement.
 
 ## Architecture
 
-- The server simulates all roots at 20 Hz and publishes ByteNet snapshots at
-  10 Hz.
+- The server simulates all roots at 20 Hz and publishes interest-managed
+  ByteNet snapshots at 10 Hz.
 - `TimeSyncService` gives snapshots a shared timestamp so clients interpolate
   approximately 100 ms behind the server.
 - Navigation uses a flat X/Z occupancy grid. Direct paths skip flow-field work;
@@ -94,6 +95,7 @@ simulatedCharacters:RegisterCharacter("Zombie", {
 	HitboxHeight = 6,
 	CullDistance = 220,
 	UseDefaultAnimations = true,
+	FlockGroup = "Undead",
 })
 ```
 
@@ -104,7 +106,7 @@ rendering, pooling, and animation automatically.
 ```luau
 const SimulatedCharacterServiceClient = require("SimulatedCharacterServiceClient")
 
-serviceBag:GetService(SimulatedCharacterServiceClient)
+local simulatedCharactersClient = serviceBag:GetService(SimulatedCharacterServiceClient)
 ```
 
 ## Spawning and movement
@@ -125,7 +127,72 @@ zombie:Destroy()
 ```
 
 `MoveTo` and `Chase` ignore Y. `GroundY` remains the root's baseline height,
-while knockback can temporarily add visual height above it.
+while knockback can temporarily add visual height above it. Once inside its
+stopping distance, a character continues turning on X/Z to face its current
+target even though its movement has stopped.
+
+## Flocking and local avoidance
+
+Set `FlockGroup` to a non-empty string to give characters in that group
+server-authoritative crowd steering:
+
+```luau
+simulatedCharacters:RegisterCharacter("Zombie", {
+	TemplateName = "Zombie",
+	FlockGroup = "Undead",
+})
+```
+
+Only characters with the same exact group name influence each other. The
+service combines hitbox-based separation, light velocity alignment, and light
+cohesion with the existing path direction. If the blended move is blocked, it
+falls back to the unmodified navigation direction.
+
+Flocking runs only for kinematic movement. Knockback and ragdoll characters do
+not steer or influence their group until they return to kinematic mode. The
+calculation uses reusable dense group arrays, squared X/Z distance checks, and
+does not add anything to network snapshots.
+
+## Network interest
+
+Spawn and removal messages are sent globally so every client maintains the
+complete lightweight NPC registry. This allows an NPC to become visible as
+soon as it approaches without needing a second spawn lifecycle.
+
+Periodic movement snapshots and immediate state changes are sent only to
+players within that definition's `CullDistance`. Distance checks use X/Z and
+include `HitboxRadius`, matching the client culling boundary. When an NPC leaves
+range, the server sends one final reliable state so the client cannot leave a
+stale model visible, then stops updates until the NPC enters range again.
+
+## Debug drawing
+
+Toggle local debug drawing through the client service:
+
+```luau
+simulatedCharactersClient:SetDebug(true)
+
+-- Remove every debug drawing and stop requesting debug data.
+simulatedCharactersClient:SetDebug(false)
+```
+
+`SetDebug(true)` loads the `Draw` package locally and creates a
+`Workspace.SimulatedCharacterDebug` folder visible only to that client. It
+requests path data only for nearby NPCs at 5 Hz. Debug requests are rate-limited
+on the server, and no debug packets or drawing work run while disabled.
+
+The visualization refreshes at 5 Hz:
+
+- Red boxes are authoritative hitboxes.
+- Cyan rings are client culling and network-update ranges.
+- Magenta rings are flock neighbor ranges.
+- Yellow rings are stopping distances around current targets.
+- Green lines show direct or flow-field paths.
+- Orange lines show actual movement after flock steering.
+- Blue lines are the configured navigation bounds.
+
+Debug defaults to false and is cleaned up automatically with the client
+service.
 
 ## Knockback and cosmetic ragdolls
 
@@ -173,6 +240,8 @@ player reuse the same path data.
   destinations require unique flow fields.
 - Character visuals are pooled per template after culling.
 - Normal movement, navigation, and culling use X/Z only.
-- Characters intentionally overlap and do not collide with each other.
+- Characters without a `FlockGroup`, and characters in different groups, may
+  overlap. Members of one flock use soft local avoidance rather than Roblox
+  physics collisions.
 - Use `GetCFrame()` and `GetHitboxSize()` for authoritative server-side combat
   checks instead of relying on client limbs.

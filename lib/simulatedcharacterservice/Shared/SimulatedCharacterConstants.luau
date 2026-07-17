@@ -34,6 +34,13 @@ SimulatedCharacterConstants.DEFAULT_CULL_DISTANCE = 250
 SimulatedCharacterConstants.DEFAULT_KNOCKBACK_DAMPING = 2
 SimulatedCharacterConstants.DEFAULT_GROUND_FRICTION = 8
 
+SimulatedCharacterConstants.DEFAULT_FLOCK_NEIGHBOR_RADIUS = 14
+SimulatedCharacterConstants.DEFAULT_FLOCK_SEPARATION_PADDING = 1
+SimulatedCharacterConstants.DEFAULT_FLOCK_SEPARATION_WEIGHT = 1.6
+SimulatedCharacterConstants.DEFAULT_FLOCK_ALIGNMENT_WEIGHT = 0.2
+SimulatedCharacterConstants.DEFAULT_FLOCK_COHESION_WEIGHT = 0.08
+SimulatedCharacterConstants.DEFAULT_FLOCK_MAX_STEERING = 1.75
+
 SimulatedCharacterConstants.RAGDOLL_CONSTRAINT_ATTRIBUTE = "SimulatedCharacterRagdollConstraint"
 SimulatedCharacterConstants.RAGDOLL_MOTOR_ATTRIBUTE = "SimulatedCharacterRagdollMotor"
 

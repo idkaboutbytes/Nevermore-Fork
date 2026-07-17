@@ -41,8 +41,38 @@ return TableUtils.deepReadonly(ByteNet.defineNamespace("SimulatedCharacters", fu
 		state = state,
 	})
 
+	const debugPoint = ByteNet.struct({
+		x = ByteNet.float32,
+		z = ByteNet.float32,
+	})
+
+	const debugCharacter = ByteNet.struct({
+		id = ByteNet.uint32,
+		hitboxHeight = ByteNet.float32,
+		stoppingDistance = ByteNet.float32,
+		hasFlock = ByteNet.bool,
+		hasTarget = ByteNet.bool,
+		targetX = ByteNet.float32,
+		targetZ = ByteNet.float32,
+		path = ByteNet.array(debugPoint),
+	})
+
 	return {
 		packets = {
+			debugRequested = ByteNet.definePacket({
+				value = ByteNet.bool,
+			}),
+			debugSnapshot = ByteNet.definePacket({
+				reliabilityType = "unreliable",
+				value = ByteNet.struct({
+					hasNavigation = ByteNet.bool,
+					navigationMinX = ByteNet.float32,
+					navigationMinZ = ByteNet.float32,
+					navigationMaxX = ByteNet.float32,
+					navigationMaxZ = ByteNet.float32,
+					characters = ByteNet.array(debugCharacter),
+				}),
+			}),
 			spawned = ByteNet.definePacket({
 				value = spawn,
 			}),

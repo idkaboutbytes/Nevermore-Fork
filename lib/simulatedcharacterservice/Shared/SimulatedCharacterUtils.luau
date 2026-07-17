@@ -42,6 +42,7 @@ function SimulatedCharacterUtils.resolveDefinition(
 		definition.UseDefaultAnimations == nil or type(definition.UseDefaultAnimations) == "boolean",
 		"Bad UseDefaultAnimations"
 	)
+	assert(definition.FlockGroup == nil or type(definition.FlockGroup) == "string", "Bad FlockGroup")
 
 	return table.freeze({
 		Name = name,
@@ -57,6 +58,7 @@ function SimulatedCharacterUtils.resolveDefinition(
 		IdleAnimationId = definition.IdleAnimationId or "",
 		WalkAnimationId = definition.WalkAnimationId or "",
 		UseDefaultAnimations = definition.UseDefaultAnimations ~= false,
+		FlockGroup = definition.FlockGroup or "",
 	})
 end
 

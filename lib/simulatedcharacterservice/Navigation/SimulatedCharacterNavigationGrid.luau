@@ -527,6 +527,66 @@ function SimulatedCharacterNavigationGrid._buildFlowField(
 	}
 end
 
+function SimulatedCharacterNavigationGrid._getDebugPath(
+	self: SimulatedCharacterNavigationGrid,
+	position: Vector2,
+	targetKey: any,
+	targetPosition: Vector2
+): { Vector2 }
+	self:_ensureCurrent()
+	const result = { position }
+	if self:_isSegmentWalkable(position, targetPosition) then
+		table.insert(result, targetPosition)
+		return result
+	end
+
+	const targetIndex = self:_findNearestWalkableIndex(targetPosition)
+	const positionIndex = self:_findNearestWalkableIndex(position)
+	if not targetIndex or not positionIndex then
+		return result
+	end
+
+	local flowField = self._flowFields[targetKey]
+	if not flowField or flowField.targetIndex ~= targetIndex then
+		self:GetDirection(position, targetKey, targetPosition)
+		flowField = self._flowFields[targetKey]
+	end
+	if not flowField or flowField.targetIndex ~= targetIndex then
+		return result
+	end
+
+	local currentIndex = positionIndex
+	local currentPosition = self:_indexToWorld(currentIndex)
+	local previousDirection: Vector2? = nil
+	local reachedTarget = currentIndex == targetIndex
+	for _ = 1, self._width * self._height do
+		if reachedTarget then
+			break
+		end
+
+		const nextIndex = flowField.nextByIndex[currentIndex]
+		if not nextIndex then
+			break
+		end
+		const nextPosition = self:_indexToWorld(nextIndex)
+		const direction = (nextPosition - currentPosition).Unit
+		if previousDirection and direction:Dot(previousDirection) < 0.999 then
+			table.insert(result, currentPosition)
+		end
+		previousDirection = direction
+		currentIndex = nextIndex
+		currentPosition = nextPosition
+		reachedTarget = currentIndex == targetIndex
+	end
+
+	if reachedTarget then
+		table.insert(result, targetPosition)
+	elseif (currentPosition - position).Magnitude > 1e-4 then
+		table.insert(result, currentPosition)
+	end
+	return result
+end
+
 function SimulatedCharacterNavigationGrid.Destroy(self: SimulatedCharacterNavigationGrid)
 	self._maid:DoCleaning()
 	table.clear(self)

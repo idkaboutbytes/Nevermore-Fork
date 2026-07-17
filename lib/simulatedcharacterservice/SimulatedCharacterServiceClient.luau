@@ -25,6 +25,8 @@ const SimulatedCharacterTypes = require("SimulatedCharacterTypes")
 const TableUtils = require("TableUtils")
 const TimeSyncService = require("TimeSyncService")
 
+const DEBUG_REQUEST_INTERVAL = 0.2
+
 type PendingState = {
 	state: SimulatedCharacterTypes.NetworkState,
 	serverTime: number,
@@ -48,6 +50,7 @@ export type SimulatedCharacterServiceClient = typeof(setmetatable(
 		_modelPool: { [string]: { Model } },
 		_defaultIdleAnimationId: string,
 		_defaultWalkAnimationId: string,
+		_debugVisualizer: any?,
 		_destroyed: boolean,
 	},
 	{} :: typeof({ __index = SimulatedCharacterServiceClient })
@@ -67,6 +70,7 @@ function SimulatedCharacterServiceClient.Init(self: SimulatedCharacterServiceCli
 	self._modelPool = {}
 	self._defaultIdleAnimationId = ""
 	self._defaultWalkAnimationId = ""
+	self._debugVisualizer = nil
 	self._destroyed = false
 
 	const renderFolder = Instance.new("Folder")
@@ -93,6 +97,17 @@ function SimulatedCharacterServiceClient.Init(self: SimulatedCharacterServiceCli
 			self:_handleState(state, snapshot.serverTime)
 		end
 	end)
+	SimulatedCharacterNetwork.packets.debugSnapshot.listen(
+		function(snapshot: SimulatedCharacterTypes.NetworkDebugSnapshot)
+			if self._destroyed then
+				return
+			end
+			const debugVisualizer = self._debugVisualizer
+			if debugVisualizer then
+				debugVisualizer:_applySnapshot(snapshot)
+			end
+		end
+	)
 end
 
 function SimulatedCharacterServiceClient.Start(self: SimulatedCharacterServiceClient)
@@ -113,6 +128,41 @@ function SimulatedCharacterServiceClient.Start(self: SimulatedCharacterServiceCl
 			self:_requestInitialState()
 		end)
 		:Catch(warn)
+end
+
+--[=[
+	Enables or disables local debug drawing. While enabled, the client requests
+	nearby pathfinding data from the server at 5 Hz.
+
+	@within SimulatedCharacterServiceClient
+	@param enabled boolean
+]=]
+function SimulatedCharacterServiceClient.SetDebug(self: SimulatedCharacterServiceClient, enabled: boolean)
+	assert(type(enabled) == "boolean", "Bad enabled")
+	assert(not self._destroyed, "SimulatedCharacterServiceClient is destroyed")
+	if (self._debugVisualizer ~= nil) == enabled then
+		return
+	end
+
+	self._maid._debugRequestConnection = nil
+	self._maid._debugVisualizer = nil
+	self._debugVisualizer = nil
+	if not enabled then
+		return
+	end
+
+	const debugVisualizer = require("SimulatedCharacterDebug").new(self)
+	self._debugVisualizer = debugVisualizer
+	self._maid._debugVisualizer = debugVisualizer
+	SimulatedCharacterNetwork.packets.debugRequested.send(true)
+	local accumulator = 0
+	self._maid._debugRequestConnection = RunService.Heartbeat:Connect(function(deltaTime: number)
+		accumulator += deltaTime
+		if accumulator >= DEBUG_REQUEST_INTERVAL then
+			accumulator %= DEBUG_REQUEST_INTERVAL
+			SimulatedCharacterNetwork.packets.debugRequested.send(true)
+		end
+	end)
 end
 
 --[=[
@@ -338,6 +388,7 @@ function SimulatedCharacterServiceClient.Destroy(self: SimulatedCharacterService
 	end
 
 	self._destroyed = true
+	self._debugVisualizer = nil
 	for _, character in self._charactersById do
 		character:Destroy()
 	end
