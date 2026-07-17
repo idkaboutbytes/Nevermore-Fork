@@ -1,0 +1,73 @@
+--!strict
+--[=[
+	ByteNet protocol for SimulatedCharacterService.
+
+	@network SimulatedCharacterNetwork
+]=]
+
+const require = require("../../Loader").load()
+
+const ByteNet = require("ByteNet")
+const TableUtils = require("TableUtils")
+
+return TableUtils.deepReadonly(ByteNet.defineNamespace("SimulatedCharacters", function()
+	const state = ByteNet.struct({
+		id = ByteNet.uint32,
+		x = ByteNet.float32,
+		z = ByteNet.float32,
+		groundY = ByteNet.float32,
+		height = ByteNet.float32,
+		yaw = ByteNet.float32,
+		velocityX = ByteNet.float32,
+		velocityZ = ByteNet.float32,
+		verticalVelocity = ByteNet.float32,
+		mode = ByteNet.uint8,
+		stateStartedAt = ByteNet.float64,
+	})
+
+	const definition = ByteNet.struct({
+		name = ByteNet.string,
+		templateName = ByteNet.string,
+		cullDistance = ByteNet.float32,
+		hitboxRadius = ByteNet.float32,
+		idleAnimationId = ByteNet.string,
+		walkAnimationId = ByteNet.string,
+		useDefaultAnimations = ByteNet.bool,
+	})
+
+	const spawn = ByteNet.struct({
+		serverTime = ByteNet.float64,
+		definition = definition,
+		state = state,
+	})
+
+	return {
+		packets = {
+			spawned = ByteNet.definePacket({
+				value = spawn,
+			}),
+			removed = ByteNet.definePacket({
+				value = ByteNet.uint32,
+			}),
+			stateChanged = ByteNet.definePacket({
+				value = ByteNet.struct({
+					serverTime = ByteNet.float64,
+					state = state,
+				}),
+			}),
+			snapshot = ByteNet.definePacket({
+				reliabilityType = "unreliable",
+				value = ByteNet.struct({
+					serverTime = ByteNet.float64,
+					characters = ByteNet.array(state),
+				}),
+			}),
+		},
+		queries = {
+			requestInitialState = ByteNet.defineQuery({
+				request = ByteNet.nothing,
+				response = ByteNet.array(spawn),
+			}),
+		},
+	}
+end))
