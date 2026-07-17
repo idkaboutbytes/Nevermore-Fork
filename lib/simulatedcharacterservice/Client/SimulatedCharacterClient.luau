@@ -312,7 +312,7 @@ function SimulatedCharacterClient._loadAnimations(self: SimulatedCharacterClient
 		controller = animationController
 	end
 
-	const animator = AnimationUtils.getOrCreateAnimator(controller)
+	const animator = AnimationUtils.getOrCreateAnimator(controller, false)
 	const animate = model:FindFirstChild("Animate")
 	const templateAnimationIds = if animate
 		then DefaultCharacterAnimationUtils.getAnimationIdsFromAnimate(animate)

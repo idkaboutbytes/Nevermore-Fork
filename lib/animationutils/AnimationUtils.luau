@@ -34,29 +34,55 @@ function AnimationUtils.setWeightTargetIfNotSet(track: AnimationTrack, weight: n
 	end
 end
 
-function AnimationUtils.getOrCreateAnimator(humanoid: Humanoid | AnimationController): Animator
-	local animator = humanoid:FindFirstChildOfClass('Animator')
+function AnimationUtils.getOrCreateAnimator(
+	target: Humanoid | AnimationController | Animator | Model | Player,
+	warnIfCreatedOnClient: boolean?
+): Animator
+	assert(typeof(target) == 'Instance', 'Bad target')
+	if target:IsA('Animator') then
+		return target
+	elseif target:IsA('Player') then
+		local character = target.Character
+		assert(character, 'Player has no character')
+		return AnimationUtils.getOrCreateAnimator(character, warnIfCreatedOnClient)
+	elseif target:IsA('Model') then
+		local descendantAnimator = target:FindFirstChildWhichIsA('Animator', true)
+		if descendantAnimator then
+			return descendantAnimator
+		end
+
+		local controller = target:FindFirstChildOfClass('Humanoid')
+			or target:FindFirstChildOfClass('AnimationController')
+		if not controller then
+			controller = Instance.new('AnimationController')
+			controller.Name = 'AnimationController'
+			controller.Parent = target
+		end
+		return AnimationUtils.getOrCreateAnimator(controller, warnIfCreatedOnClient)
+	end
+
+	local animator = target:FindFirstChildOfClass('Animator')
 	if animator ~= nil then
 		return animator
 	end
 
-	if RunService:IsClient() then
+	if RunService:IsClient() and warnIfCreatedOnClient ~= false then
 		warn(
 			string.format(
 				'[HumanoidAnimatorUtils.getOrCreateAnimator] - Creating an animator on %s on the client',
-				humanoid:GetFullName()
+				target:GetFullName()
 			)
 		)
 	end
 
 	local newAnimator = Instance.new('Animator')
 	newAnimator.Name = 'Animator'
-	newAnimator.Parent = humanoid
+	newAnimator.Parent = target
 	return newAnimator
 end
 
 function AnimationUtils.getOrCreateAnimationTrack(
-	target: Animator | Player | Model | AnimationController,
+	target: Animator | Player | Model | Humanoid | AnimationController,
 	id: string | number,
 	priority: Enum.AnimationPriority?
 ): AnimationTrack?
@@ -133,7 +159,7 @@ function AnimationUtils.stopAnimations(humanoid: Humanoid, fadeTime: number)
 end
 
 function AnimationUtils.stopAnimation(
-	target: Animator | Player | Model | AnimationController,
+	target: Animator | Player | Model | Humanoid | AnimationController,
 	id: string | number,
 	fadeTime: number?
 ): AnimationTrack?
@@ -189,7 +215,7 @@ function AnimationUtils.isMatchingAnimationTrack(
 end
 
 function AnimationUtils.findAnimationTrack(
-	target: Animator | Player | Model | AnimationController,
+	target: Animator | Player | Model | Humanoid | AnimationController,
 	id: string | number,
 	priority: Enum.AnimationPriority?
 ): AnimationTrack?
