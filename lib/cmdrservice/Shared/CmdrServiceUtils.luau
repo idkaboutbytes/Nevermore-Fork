@@ -6,6 +6,7 @@
 const require = require("../../Loader").load()
 
 const ServiceBag = require("ServiceBag")
+const Squash = require("Squash")
 const t = require("t")
 
 const CmdrServiceUtils = {}
@@ -23,11 +24,16 @@ export type CommandArgument = {
 export type CommandDefinition = {
 	Name: string,
 	Description: string?,
-	Group: any?,
+	Group: string?,
 	Aliases: { string }?,
 	AutoExec: { string }?,
 	Args: { CommandArgument }?,
 	Run: (...any) -> ...any,
+}
+
+export type CommandPacket = {
+	metadata: buffer,
+	properties: { [string]: any },
 }
 
 --> Constants
@@ -35,6 +41,7 @@ export type CommandDefinition = {
 const assertCommandDefinition = t.interface({
 	Name = t.string,
 	Description = t.optional(t.string),
+	Group = t.optional(t.string),
 	Aliases = t.optional(t.array(t.string)),
 	AutoExec = t.optional(t.array(t.string)),
 	Args = t.optional(t.table),
@@ -45,6 +52,11 @@ const assertCommandDefinition = t.interface({
 -- absent on purpose: both are functions the client would need to hold, and a
 -- function cannot be sent over a remote.
 const REPLICATED_COMMAND_KEYS = table.freeze({ "Name", "Aliases", "AutoExec", "Description", "Args", "Group" })
+const COMMAND_METADATA_SCHEMA = Squash.record({
+	Name = Squash.string,
+	Group = Squash.opt(Squash.string),
+	Description = Squash.opt(Squash.string),
+})
 
 const function assertNoFunctions(value: any, path: string)
 	if type(value) == "function" then
@@ -115,6 +127,56 @@ function CmdrServiceUtils.getReplicatedCommand(definition: CommandDefinition): C
 	end
 
 	return replicated :: any
+end
+
+--[=[
+	Encodes the known string fields into a compact Squash buffer and leaves the
+	remaining client-safe Cmdr properties as a generic table.
+
+	@within CmdrServiceUtils
+	@param definition CommandDefinition
+	@return CommandPacket
+]=]
+function CmdrServiceUtils.serializeCommand(definition: CommandDefinition): CommandPacket
+	const cursor = Squash.cursor()
+	COMMAND_METADATA_SCHEMA.ser(cursor, {
+		Name = definition.Name,
+		Group = definition.Group,
+		Description = definition.Description,
+	})
+
+	const properties = {}
+	for _, key in REPLICATED_COMMAND_KEYS do
+		if key ~= "Name" and key ~= "Group" and key ~= "Description" then
+			const value = (definition :: any)[key]
+			if value ~= nil then
+				properties[key] = value
+			end
+		end
+	end
+
+	return {
+		metadata = Squash.tobuffer(cursor),
+		properties = properties,
+	}
+end
+
+--[=[
+	Reconstructs a Cmdr command definition from its compact network packet.
+
+	@within CmdrServiceUtils
+	@param packet CommandPacket
+	@return CommandDefinition
+]=]
+function CmdrServiceUtils.deserializeCommand(packet: CommandPacket): CommandDefinition
+	const metadata = COMMAND_METADATA_SCHEMA.des(Squash.frombuffer(packet.metadata))
+	const definition = packet.properties
+
+	definition.Name = metadata.Name
+	definition.Group = metadata.Group
+	definition.Description = metadata.Description
+
+	return definition :: any
 end
 
 return CmdrServiceUtils

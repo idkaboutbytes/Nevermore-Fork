@@ -15,6 +15,7 @@ const PromiseInstanceUtils = require("PromiseInstanceUtils")
 const ServiceBag = require("ServiceBag")
 const StringUtils = require("StringUtils")
 const CmdrServiceNetwork = require("CmdrServiceNetwork")
+const CmdrServiceUtils = require("CmdrServiceUtils")
 
 const Player = Players.LocalPlayer
 
@@ -42,9 +43,10 @@ function CmdrServiceClient.Init(self: CmdrServiceClient, serviceBag: ServiceBag.
 	-- Listening before asking, so a command registered on the server between our
 	-- request and our registry coming up is not missed. Re-registering is
 	-- harmless -- Cmdr replaces by name.
-	CmdrServiceNetwork.packets.commandsReplicated.listen(function(definitions: { any })
+	CmdrServiceNetwork.packets.commandsReplicated.listen(function(definitions: { CmdrServiceUtils.CommandPacket })
 		self:PromiseCmdr():Then(function(cmdrClient)
-			for _, definition in definitions do
+			for _, packet in definitions do
+				const definition = CmdrServiceUtils.deserializeCommand(packet)
 				cmdrClient.Registry:RegisterCommandObject(definition)
 			end
 		end)

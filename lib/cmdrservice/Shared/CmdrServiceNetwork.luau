@@ -33,7 +33,10 @@ return TableUtils.deepReadonly(ByteNet.defineNamespace("CmdrService", function()
 			}),
 
 			commandsReplicated = ByteNet.definePacket({
-				value = ByteNet.array(ByteNet.unknown),
+				value = ByteNet.array(ByteNet.struct({
+					metadata = ByteNet.buff,
+					properties = ByteNet.unknown,
+				})),
 			}),
 		},
 	}

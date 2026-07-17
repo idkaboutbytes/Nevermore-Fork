@@ -25,7 +25,7 @@ export type CmdrService = typeof(setmetatable(
 		_permissionService: PermissionService.PermissionService,
 		_promiseCmdr: Promise.Promise<any>,
 
-		_commandDefinitions: ObservableMap.ObservableMap<string, CmdrServiceUtils.CommandDefinition>,
+		_commandDefinitions: ObservableMap.ObservableMap<string, CmdrServiceUtils.CommandPacket>,
 	},
 	{} :: typeof({ __index = CmdrService })
 ))
@@ -157,12 +157,13 @@ function CmdrService.RegisterCommand(
 	definition: CmdrServiceUtils.CommandDefinition
 ): Promise.Promise<()>
 	const replicated = CmdrServiceUtils.getReplicatedCommand(definition)
+	const packet = CmdrServiceUtils.serializeCommand(replicated)
 
 	return self:PromiseCmdr():Then(function(cmdr)
 		cmdr.Registry:RegisterCommandObject(definition)
 
-		self._commandDefinitions:Set(replicated.Name, replicated)
-		CmdrServiceNetwork.packets.commandsReplicated.sendToAll({ replicated })
+		self._commandDefinitions:Set(replicated.Name, packet)
+		CmdrServiceNetwork.packets.commandsReplicated.sendToAll({ packet })
 	end)
 end
 
