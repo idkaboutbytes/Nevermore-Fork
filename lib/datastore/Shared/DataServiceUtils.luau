@@ -8,6 +8,7 @@ const require = require("../../Loader").load()
 const StringUtils = require("StringUtils")
 const TableUtils = require("TableUtils")
 const ObservableMap = require("ObservableMap")
+const DefaultValueUtils = require("DefaultValueUtils")
 
 const DataServiceUtils = {}
 
@@ -135,6 +136,43 @@ function DataServiceUtils.writeValuePath(target: any, path: string, value: any):
 
 	current[parts[#parts]] = value
 	return value
+end
+
+--[=[
+    Returns a copy of profile data safe to send to the client, with every hidden
+    key blanked to its default value.
+
+    The values are blanked rather than removed because the payload is serialized
+    against a fixed schema, which has no way to express an absent key. The client
+    is sent the hidden key list alongside and drops them on arrival.
+
+    @within DataServiceUtils
+    @param data table
+    @param hiddenKeys { string }
+    @return table
+]=]
+function DataServiceUtils.getReplicatedData(data: any, hiddenKeys: { string }): any
+	if #hiddenKeys == 0 then
+		return data
+	end
+
+	const replicated = TableUtils.deepCopy(data)
+	for _, keyName in hiddenKeys do
+		const currentValue = DataServiceUtils.readValuePath(replicated, keyName)
+		if currentValue == nil then
+			continue
+		end
+
+		const success, defaultValue = pcall(DefaultValueUtils.toDefaultValue, currentValue)
+		if not success then
+			warn(`[DataServiceUtils] - Cannot blank hidden key {keyName} ({defaultValue}), it will replicate as-is`)
+			continue
+		end
+
+		DataServiceUtils.writeValuePath(replicated, keyName, defaultValue)
+	end
+
+	return replicated
 end
 
 --[=[

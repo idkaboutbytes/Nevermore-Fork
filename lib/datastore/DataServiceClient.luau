@@ -49,11 +49,17 @@ function DataServiceClient.Init(self: DataServiceClient, serviceBag: ServiceBag.
 end
 
 function DataServiceClient.Start(self: DataServiceClient)
-	DataServiceNetwork.packets.profileLoaded.listen(function(value: buffer)
+	DataServiceNetwork.packets.profileLoaded.listen(function(value: { data: buffer, hiddenKeys: { string } })
 		self._profileDataPromise
 			:Then(function(profileData)
-				const cursor = Squash.frombuffer(value)
+				const cursor = Squash.frombuffer(value.data)
 				const profile = profileData.Schema.des(cursor)
+
+				-- Hidden keys ride along blanked out to keep the buffer schema-shaped,
+				-- so drop them rather than surface a placeholder as if it were real
+				for _, keyName in value.hiddenKeys do
+					DataServiceUtils.writeValuePath(profile, keyName, nil)
+				end
 
 				for keyName, keyValue in profile do
 					self._data:Set(keyName, keyValue)
@@ -72,18 +78,18 @@ function DataServiceClient.Start(self: DataServiceClient)
 end
 
 --[=[
-	Sets the ProfileData Module. This must be the same module the server was
+	Sets the ProfileData schema. This must be the same schema the server was
 	given via [DataService.SetSchema], or the profile buffer cannot be read.
 
 	@within DataServiceClient
-	@param module ModuleScript
+	@param schema table
 ]=]
-function DataServiceClient.SetSchema(self: DataServiceClient, module: ModuleScript)
+function DataServiceClient.SetSchema(self: DataServiceClient, schema: { [any]: any })
 	if self._profileDataPromise:IsFulfilled() then
 		return
 	end
 
-	self._profileDataPromise:Resolve((require :: any)(module))
+	self._profileDataPromise:Resolve(schema)
 end
 
 --[=[

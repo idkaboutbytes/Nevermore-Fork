@@ -23,7 +23,10 @@ return TableUtils.deepReadonly(ByteNet.defineNamespace("DataStore", function()
 	return {
 		packets = {
 			profileLoaded = ByteNet.definePacket({
-				value = ByteNet.buff,
+				value = ByteNet.struct({
+					data = ByteNet.buff,
+					hiddenKeys = ByteNet.array(ByteNet.string),
+				}),
 			}),
 
 			valueChanged = ByteNet.definePacket({

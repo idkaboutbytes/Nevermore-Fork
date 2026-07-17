@@ -41,7 +41,14 @@ export type Promise<T...> = typeof(setmetatable(
 	@return boolean
 ]=]
 function Promise.isPromise(value: any): boolean
-	return type(value) == "table" and value.ClassName == "Promise"
+	if type(value) ~= "table" then
+		return false
+	end
+
+	-- rawget through the metatable: a plain index would fire __index on
+	-- read-only tables, which error rather than return nil.
+	local metatable = getmetatable(value)
+	return type(metatable) == "table" and rawget(metatable, "ClassName") == "Promise"
 end
 
 --[=[

@@ -15,6 +15,11 @@ local DEFAULT_PREDICATE = function(value)
 	return value ~= nil
 end
 
+-- Roblox rejects attribute names outside this shape, and reserves the RBX prefix
+local ATTRIBUTE_NAME_PATTERN = '^[%w_]+$'
+local ATTRIBUTE_NAME_MAX_LENGTH = 100
+local RESERVED_ATTRIBUTE_PREFIX = 'RBX'
+
 local AttributeUtils = {}
 
 type ValidAttributeMap = { [string]: true }
@@ -52,6 +57,57 @@ local VALID_ATTRIBUTE_TYPES: ValidAttributeMap = table.freeze({
 ]=]
 function AttributeUtils.isValidAttributeType(valueType: string): boolean
 	return VALID_ATTRIBUTE_TYPES[valueType] == true
+end
+
+--[=[
+	Returns whether Roblox will accept this string as an attribute name.
+
+	```lua
+	print(AttributeUtils.isValidAttributeName('Health')) --> true
+	print(AttributeUtils.isValidAttributeName('Stats.Health')) --> false
+	```
+
+	@param attributeName string
+	@return boolean
+]=]
+function AttributeUtils.isValidAttributeName(attributeName: string): boolean
+	return #attributeName <= ATTRIBUTE_NAME_MAX_LENGTH
+		and string.match(attributeName, ATTRIBUTE_NAME_PATTERN) ~= nil
+		and string.sub(attributeName, 1, #RESERVED_ATTRIBUTE_PREFIX) ~= RESERVED_ATTRIBUTE_PREFIX
+end
+
+--[=[
+	Sets an attribute, but only if Roblox can actually hold the value -- an
+	invalid name or value type warns and returns false instead of throwing.
+	Passing nil clears the attribute.
+
+	@param instance Instance
+	@param attributeName string
+	@param value any
+	@return boolean -- Whether the attribute was set
+]=]
+function AttributeUtils.setAttribute(instance: Instance, attributeName: string, value: any): boolean
+	assert(typeof(instance) == 'Instance', 'Bad instance')
+	assert(typeof(attributeName) == 'string', 'Bad attributeName')
+
+	if not AttributeUtils.isValidAttributeName(attributeName) then
+		warn(string.format('[AttributeUtils] - %q is not a valid attribute name', attributeName))
+		return false
+	end
+
+	if not AttributeUtils.isValidAttributeType(typeof(value)) then
+		warn(
+			string.format(
+				'[AttributeUtils] - Cannot set attribute %q to a %s, which is not a valid attribute type',
+				attributeName,
+				typeof(value)
+			)
+		)
+		return false
+	end
+
+	instance:SetAttribute(attributeName, value)
+	return true
 end
 
 --[=[

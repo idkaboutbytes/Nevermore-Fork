@@ -18,6 +18,7 @@ const t = require("t")
 const Promise = require("Promise")
 const Squash = require("Squash")
 const TableUtils = require("TableUtils")
+const AttributeUtils = require("AttributeUtils")
 const DataServiceNetwork = require("DataServiceNetwork")
 const DataServiceUtils = require("DataServiceUtils")
 
@@ -65,9 +66,18 @@ function DataService.Start(self: DataService)
 			:Then(function(profile: ProfileStore.Profile<any>)
 				const profileData = self._profileDataPromise:Wait()
 
+				const hiddenKeys = self._hiddenKeys:GetList()
+
 				const cursor = Squash.cursor()
-				profileData.Schema.ser(cursor, profile.Data)
-				DataServiceNetwork.packets.profileLoaded.sendTo(Squash.tobuffer(cursor), player)
+				profileData.Schema.ser(cursor, DataServiceUtils.getReplicatedData(profile.Data, hiddenKeys))
+				DataServiceNetwork.packets.profileLoaded.sendTo({
+					data = Squash.tobuffer(cursor),
+					hiddenKeys = hiddenKeys,
+				}, player)
+
+				for _, keyName in self._attributeKeys:GetList() do
+					AttributeUtils.setAttribute(player, keyName, (profile.Data :: any)[keyName])
+				end
 			end)
 			:Catch(function(...): ...any
 				warn(`[DataService] - Promise failed during profile loading for {player.UserId} ({...})`)
@@ -81,17 +91,17 @@ function DataService.Start(self: DataService)
 end
 
 --[=[
-	Sets the ProfileData Module (This HAS to be done, or else data will not be sent)
+	Sets the ProfileData schema (This HAS to be done, or else data will not be sent)
 
 	@within DataService
-	@param module ModuleScript
+	@param schema table
 ]=]
-function DataService.SetSchema(self: DataService, module: ModuleScript)
+function DataService.SetSchema(self: DataService, schema: { [any]: any })
 	if self._profileDataPromise:IsFulfilled() then
 		return
 	end
 
-	self._profileDataPromise:Resolve((require :: any)(module))
+	self._profileDataPromise:Resolve(schema)
 end
 
 --[=[
@@ -121,6 +131,130 @@ function DataService.AddReplicator(self: DataService, keyName: string, callback:
 end
 
 --[=[
+	Marks a key as hidden. Hidden keys live in the player's profile and save like
+	any other value, but never replicate -- the client is sent a blanked-out
+	placeholder of the same shape in its place, and later changes are not sent at
+	all.
+
+	Set hidden keys before any profile loads. Hiding a key that has already
+	replicated does not retract the copy the client is holding.
+
+	```lua
+	DataService:SetHiddenKey("PurchaseHistory")
+	DataService:SetHiddenKey("Inventory.SecretSeed")
+	```
+
+	@within DataService
+	@param keyName string
+	@returns string
+]=]
+function DataService.SetHiddenKey(self: DataService, keyName: string): string
+	assert(t.string(keyName), "Bad keyName")
+	assert(not self._attributeKeys:Contains(keyName), `Cannot hide {keyName}, it is an attribute key`)
+
+	self._hiddenKeys:Add(keyName)
+
+	return keyName
+end
+
+--[=[
+	Unmarks a hidden key. The value replicates again from its next change
+	onwards -- the client is not backfilled with what it missed.
+
+	@within DataService
+	@param keyName string
+	@returns boolean
+]=]
+function DataService.RemoveHiddenKey(self: DataService, keyName: string): boolean
+	assert(t.string(keyName), "Bad keyName")
+
+	return self._hiddenKeys:Remove(keyName)
+end
+
+--[=[
+	Returns whether a key is hidden from the client.
+
+	@within DataService
+	@param keyName string
+	@returns boolean
+]=]
+function DataService.IsHiddenKey(self: DataService, keyName: string): boolean
+	assert(t.string(keyName), "Bad keyName")
+
+	return self._hiddenKeys:Contains(keyName)
+end
+
+--[=[
+	Marks a key as an attribute key. The value is mirrored onto the Player
+	instance as an attribute of the same name, both for profiles already loaded
+	and for every profile that loads afterwards, and is kept in sync on change.
+
+	The key must be a valid attribute name, which rules out the dot-separated
+	paths [DataService.SetValue] accepts. Note that attributes replicate to every
+	client, so an attribute key cannot also be hidden.
+
+	```lua
+	DataService:SetAttributeKey("Level")
+	```
+
+	@within DataService
+	@param keyName string
+	@returns string
+]=]
+function DataService.SetAttributeKey(self: DataService, keyName: string): string
+	assert(t.string(keyName), "Bad keyName")
+	assert(AttributeUtils.isValidAttributeName(keyName), `Bad keyName, {keyName} is not a valid attribute name`)
+	assert(not self._hiddenKeys:Contains(keyName), `Cannot set attribute key {keyName}, it is a hidden key`)
+
+	self._attributeKeys:Add(keyName)
+
+	for _, player in self._profileList:GetKeyList() do
+		const profile = self._profileList:Get(player)
+
+		if profile and profile:IsActive() then
+			AttributeUtils.setAttribute(player, keyName, (profile.Data :: any)[keyName])
+		end
+	end
+
+	return keyName
+end
+
+--[=[
+	Unmarks an attribute key and clears the attribute from every loaded player.
+	The underlying value stays in the profile.
+
+	@within DataService
+	@param keyName string
+	@returns boolean
+]=]
+function DataService.RemoveAttributeKey(self: DataService, keyName: string): boolean
+	assert(t.string(keyName), "Bad keyName")
+
+	if not self._attributeKeys:Remove(keyName) then
+		return false
+	end
+
+	for _, player in self._profileList:GetKeyList() do
+		player:SetAttribute(keyName, nil)
+	end
+
+	return true
+end
+
+--[=[
+	Returns whether a key is mirrored onto the Player instance as an attribute.
+
+	@within DataService
+	@param keyName string
+	@returns boolean
+]=]
+function DataService.IsAttributeKey(self: DataService, keyName: string): boolean
+	assert(t.string(keyName), "Bad keyName")
+
+	return self._attributeKeys:Contains(keyName)
+end
+
+--[=[
 	Replicates a specified value to a certain client
 
 	@within DataService
@@ -133,6 +267,14 @@ function DataService.ReplicateValue(self: DataService, player: Player, keyName: 
 	assert(self._profileList:Get(player), "Player data hasn't loaded")
 	assert(t.string(keyName), "Bad keyName")
 	assert(t.any(keyValue), "Bad keyValue")
+
+	if self._attributeKeys:Contains(keyName) then
+		AttributeUtils.setAttribute(player, keyName, keyValue)
+	end
+
+	if self._hiddenKeys:Contains(keyName) then
+		return true
+	end
 
 	const customReplicator = self._customReplicators:Get(keyName)
 	if customReplicator then
