@@ -2,11 +2,15 @@
 --[=[
 	Replicates player data from [DataService] to [DataServiceClient].
 
-	The client announces its listeners are live with `clientReady`; the server
-	replies with that player's full data (`loaded`, hidden keys stripped) and then
-	streams `updated` deltas. Server-authoritative: the client never writes, and
-	the server never listens to `loaded`/`updated`, so a client firing them does
-	nothing.
+	On join the server sends that player their whole profile as one buffer
+	(`profileLoaded`, hidden keys blanked) and then streams `valueChanged` deltas.
+	The server never listens to either, so a client firing them does nothing.
+
+	`settingRequested` is the one thing a client may write, and it is a request
+	rather than a write: the server validates the name and value against
+	`ProfileData.Template.Settings` and only then applies it. A rejected request is
+	answered with a `valueChanged` carrying the authoritative value, which is what
+	rolls the client's optimistic guess back. See [DataServiceClient.SetSetting].
 
 	Values are `unknown` because this store is generic. Pin down a schema and swap
 	in precise types if you want the bandwidth back -- that is the point of ByteNet.
@@ -30,6 +34,15 @@ return TableUtils.deepReadonly(ByteNet.defineNamespace("DataStore", function()
 			}),
 
 			valueChanged = ByteNet.definePacket({
+				value = ByteNet.struct({
+					name = ByteNet.string,
+					value = ByteNet.unknown,
+				}),
+			}),
+
+			-- Client -> server. Untrusted: name and value are whatever the client
+			-- felt like sending, so the server validates both before applying.
+			settingRequested = ByteNet.definePacket({
 				value = ByteNet.struct({
 					name = ByteNet.string,
 					value = ByteNet.unknown,

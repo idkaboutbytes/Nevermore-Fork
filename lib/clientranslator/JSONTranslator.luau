@@ -14,7 +14,7 @@
 	@class JSONTranslator
 ]=]
 
-const require = require("../../Loader").load()
+const require = require("../Loader").load()
 
 local RunService = game:GetService("RunService")
 

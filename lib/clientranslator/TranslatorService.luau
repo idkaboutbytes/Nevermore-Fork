@@ -5,7 +5,7 @@
 	@class TranslatorService
 ]=]
 
-const require = require("../../Loader").load()
+const require = require("../Loader").load()
 
 local LocalizationService = game:GetService("LocalizationService")
 local Players = game:GetService("Players")

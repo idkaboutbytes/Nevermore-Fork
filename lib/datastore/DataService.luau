@@ -115,6 +115,35 @@ function DataService.Start(self: DataService)
 				warn(`[DataService] - Promise failed during profile loading for {player.UserId} ({...})`)
 			end)
 	end))
+
+	DataServiceNetwork.packets.settingRequested.listen(
+		function(payload: { name: string, value: unknown }, player: Player?)
+			const profile = self:GetProfile(player :: Player)
+			if not profile or not profile:IsActive() then
+				return
+			end
+
+			if not DataServiceUtils.isWritableSettingName(payload.name) then
+				return
+			end
+
+			const path = DataServiceUtils.getSettingPath(payload.name)
+			const currentValue = DataServiceUtils.readValuePath(profile.Data, path)
+			if currentValue == nil then
+				return
+			end
+
+			if not DataServiceUtils.isValidSettingValue(payload.name, payload.value) then
+				-- Never SetValue here. It returns early when the value is unchanged,
+				-- which a refusal always is, so nothing would be sent and the client
+				-- would keep believing its own guess forever.
+				self:ReplicateValue(player :: Player, path, currentValue)
+				return
+			end
+
+			self:SetValue(player :: Player, path, payload.value)
+		end
+	)
 end
 
 --[=[
@@ -164,6 +193,17 @@ end
 function DataService.SetHiddenKey(self: DataService, keyName: string): string
 	assert(t.string(keyName), "Bad keyName")
 	assert(not self._attributeKeys:Contains(keyName), `Cannot hide {keyName}, it is an attribute key`)
+
+	-- Settings have to replicate: a refused [DataServiceClient.SetSetting] is
+	-- rolled back by replicating the real value, and ReplicateValue sends nothing
+	-- for a hidden key, so the client would keep its own guess forever. Rooted
+	-- rather than exact, since hiding "Settings" and hiding "Settings.Foo" break
+	-- it in different ways -- and the second would push a hidden value to a client
+	-- that was sent a blanked root.
+	assert(
+		DataServiceUtils.splitValuePath(keyName) ~= DataServiceUtils.getSettingsKey(),
+		`Cannot hide {keyName}, settings must replicate`
+	)
 
 	self._hiddenKeys:Add(keyName)
 

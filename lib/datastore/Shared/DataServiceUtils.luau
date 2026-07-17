@@ -9,8 +9,24 @@ const StringUtils = require("StringUtils")
 const TableUtils = require("TableUtils")
 const ObservableMap = require("ObservableMap")
 const DefaultValueUtils = require("DefaultValueUtils")
+const ProfileData = require("ProfileData")
+
+const SETTINGS_KEY = "Settings"
 
 const DataServiceUtils = {}
+
+const SETTINGS_TEMPLATE: { [string]: any } = {}
+do
+	-- rawget, because a game whose profile has no Settings key at all would
+	-- otherwise throw here at require time
+	const settings = rawget(ProfileData.Template :: any, SETTINGS_KEY)
+
+	if type(settings) == "table" then
+		for name, default in settings do
+			SETTINGS_TEMPLATE[name] = default
+		end
+	end
+end
 
 --[=[
     Splits a dot-separated path into its root key and the remaining path, if
@@ -136,6 +152,115 @@ function DataServiceUtils.writeValuePath(target: any, path: string, value: any):
 
 	current[parts[#parts]] = value
 	return value
+end
+
+--[=[
+    Returns the profile root key settings are stored under.
+
+    @within DataServiceUtils
+    @return string
+]=]
+function DataServiceUtils.getSettingsKey(): string
+	return SETTINGS_KEY
+end
+
+--[=[
+    Returns the profile path a setting is stored at.
+
+    @within DataServiceUtils
+    @param name string
+    @return string
+]=]
+function DataServiceUtils.getSettingPath(name: string): string
+	return `{SETTINGS_KEY}.{name}`
+end
+
+--[=[
+    Returns every setting name the profile template declares.
+
+    @within DataServiceUtils
+    @return { string }
+]=]
+function DataServiceUtils.getSettingNames(): { string }
+	const names = {}
+
+	for name in SETTINGS_TEMPLATE do
+		table.insert(names, name)
+	end
+
+	return names
+end
+
+--[=[
+    Returns whether a name is a setting, meaning a key of the profile template's
+    Settings table. Gates reads -- see [DataServiceUtils.isWritableSettingName]
+    for whether a client may also write it.
+
+    @within DataServiceUtils
+    @param name string
+    @return boolean
+]=]
+function DataServiceUtils.isSettingName(name: string): boolean
+	if type(name) ~= "string" then
+		return false
+	end
+
+	return SETTINGS_TEMPLATE[name] ~= nil
+end
+
+--[=[
+    Returns whether a client may write a setting: a key of the template whose
+    default is a primitive.
+
+    Table-valued settings are excluded deliberately. Validity is inferred from the
+    default's type, and a type check cannot say anything about a table's shape --
+    a wrong-shaped table written into a profile makes the next `Schema.ser` throw,
+    which kills that player's whole profile buffer on every future join. Table
+    settings stay server-only, through [DataService.SetValue].
+
+    @within DataServiceUtils
+    @param name string
+    @return boolean
+]=]
+function DataServiceUtils.isWritableSettingName(name: string): boolean
+	if not DataServiceUtils.isSettingName(name) then
+		return false
+	end
+
+	-- type rather than typeof throughout: writable settings are primitives, which
+	-- the two agree on, and a Roblox datatype reads as "userdata" here, so it
+	-- fails the whitelist rather than being mistaken for a primitive
+	const defaultType = type(SETTINGS_TEMPLATE[name])
+
+	return defaultType == "boolean" or defaultType == "string" or defaultType == "number"
+end
+
+--[=[
+    Returns whether a value may be written to a setting: the same type as the
+    template's default for it, and a real number if numeric.
+
+    @within DataServiceUtils
+    @param name string
+    @param value any
+    @return boolean
+]=]
+function DataServiceUtils.isValidSettingValue(name: string, value: any): boolean
+	if not DataServiceUtils.isWritableSettingName(name) then
+		return false
+	end
+
+	const valueType = type(value)
+	if valueType ~= type(SETTINGS_TEMPLATE[name]) then
+		return false
+	end
+
+	if valueType == "number" then
+		-- NaN and the infinities are all numbers to a type check, and all three
+		-- would break the profile's serializer
+		return value == value and value ~= math.huge and value ~= -math.huge
+	end
+
+	return true
 end
 
 --[=[
