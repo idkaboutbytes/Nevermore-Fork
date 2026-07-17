@@ -87,9 +87,7 @@ function PermissionService.Start(self: PermissionService)
 			end)
 	end))
 
-	-- A query listener cannot yield: ByteNet reads its return value the moment
-	-- the thread first yields, so a yielding answer arrives as nil. IsAdmin
-	-- reads the provider's resolved state instead of waiting on it.
+	-- The provider is already resolved by Start, so answer from its current state.
 	PermissionServiceNetwork.queries.isAdmin.listen(function(value: { userId: number }): { isAdmin: boolean }
 		return {
 			isAdmin = self:IsAdmin(value.userId),

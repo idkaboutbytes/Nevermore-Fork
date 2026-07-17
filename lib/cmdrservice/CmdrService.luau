@@ -1,18 +1,27 @@
 --!strict
 --[=[
+	Registers and secures Cmdr commands.
+
+	Table-defined commands are converted into the same paired ModuleScripts Cmdr
+	normally expects. A shared definition module is replicated by Cmdr for parsing
+	and autocomplete, while a server execution module forwards back into the
+	function retained by this service.
+
+	@server
 	@class CmdrService
 ]=]
 
+const HttpService = game:GetService("HttpService")
+
 const require = require("../Loader").load()
 
+const CmdrServiceUtils = require("CmdrServiceUtils")
+const CmdrTemplateProviderServer = require("CmdrTemplateProviderServer")
 const Maid = require("Maid")
-const ObservableMap = require("ObservableMap")
 const PermissionService = require("PermissionService")
 const Promise = require("Promise")
 const ServiceBag = require("ServiceBag")
 const t = require("t")
-const CmdrServiceNetwork = require("CmdrServiceNetwork")
-const CmdrServiceUtils = require("CmdrServiceUtils")
 
 const CmdrService = {}
 CmdrService.ServiceName = "CmdrService"
@@ -23,44 +32,61 @@ export type CmdrService = typeof(setmetatable(
 		_serviceBag: ServiceBag.ServiceBag,
 		_maid: Maid.Maid,
 		_permissionService: PermissionService.PermissionService,
+		_cmdrTemplateProviderServer: any,
+		_serviceId: string,
 		_promiseCmdr: Promise.Promise<any>,
-
-		_commandDefinitions: ObservableMap.ObservableMap<string, CmdrServiceUtils.CommandPacket>,
+		_definitionData: { [string]: CmdrServiceUtils.CommandDefinition },
+		_executeData: { [string]: CmdrServiceUtils.CommandExecute },
+		_commandIdsByName: { [string]: string },
+		_registeredCommandIdsByName: { [string]: string },
+		_commandScriptsByName: { [string]: ModuleScript },
+		_commandServerScriptsByName: { [string]: ModuleScript },
 	},
 	{} :: typeof({ __index = CmdrService })
 ))
+
+const GLOBAL_REGISTRY: { [string]: CmdrService } = setmetatable({}, {
+	__mode = "v",
+}) :: any
 
 function CmdrService.Init(self: CmdrService, serviceBag: ServiceBag.ServiceBag)
 	assert(not (self :: any)._serviceBag, "Already initialized")
 	self._serviceBag = assert(serviceBag, "No serviceBag")
 	self._maid = Maid.new()
+
 	self._permissionService = self._serviceBag:GetService(PermissionService)
+	self._cmdrTemplateProviderServer = self._serviceBag:GetService(CmdrTemplateProviderServer)
 
-	-- Keyed by name so re-registering a command replaces it, exactly as Cmdr's
-	-- own registry does
-	self._commandDefinitions = self._maid:Add(ObservableMap.new())
+	self._serviceId = HttpService:GenerateGUID(false)
+	self._definitionData = {}
+	self._executeData = {}
+	self._commandIdsByName = {}
+	self._registeredCommandIdsByName = {}
+	self._commandScriptsByName = {}
+	self._commandServerScriptsByName = {}
+	GLOBAL_REGISTRY[self._serviceId] = self
 
-	self._promiseCmdr = Promise.spawn(function(resolve, reject)
+	self._maid:Add(function()
+		if GLOBAL_REGISTRY[self._serviceId] == self then
+			GLOBAL_REGISTRY[self._serviceId] = nil
+		end
+	end)
+
+	self._promiseCmdr = self._maid:GivePromise(Promise.spawn(function(resolve, reject)
 		local cmdr = nil
-		const success, err = pcall(function()
+		const success, resultOrError = pcall(function()
 			cmdr = require("Cmdr")
 		end)
 
-		if not success then
-			return reject(err)
+		if success then
+			resolve(cmdr)
+		else
+			reject(resultOrError)
 		end
-
-		resolve(cmdr)
-	end)
+	end))
 end
 
 function CmdrService.Start(self: CmdrService)
-	-- Answered rather than pushed on join: a client cannot receive anything until
-	-- its own registry is live, so it asks when it is ready
-	CmdrServiceNetwork.packets.commandsRequested.listen(function(_, player: Player)
-		CmdrServiceNetwork.packets.commandsReplicated.sendTo(self._commandDefinitions:GetValueList(), player)
-	end)
-
 	self:PromiseCmdr():Then(function(cmdr)
 		CmdrServiceUtils.writeServiceBagInContext(cmdr.Registry, self._serviceBag)
 
@@ -70,21 +96,21 @@ function CmdrService.Start(self: CmdrService)
 
 		cmdr.Registry:RegisterHook("BeforeRun", function(context)
 			if not context.Executor then
-				return
+				return nil
 			end
 
-			local permissionPromise = self._permissionService:PromiseIsAdmin(context.Executor)
+			const permissionPromise = self._permissionService:PromiseIsAdmin(context.Executor)
 			if permissionPromise:IsPending() then
 				return "Still loading permissions"
 			end
 
-			local hasPermissionResult, isAdmin = permissionPromise:Yield()
+			const hasPermissionResult, isAdmin = permissionPromise:Yield()
 			if not hasPermissionResult then
 				return type(isAdmin) == "string" and isAdmin or "Failed to check admin permissions"
 			end
 
 			if not isAdmin then
-				return `You don't have permission to run this command`
+				return "You don't have permission to run this command"
 			end
 
 			return nil
@@ -93,15 +119,11 @@ function CmdrService.Start(self: CmdrService)
 end
 
 --[=[
-	Registers every command in a container once Cmdr has loaded.
+	Registers every paired command module beneath a container.
 
-	Cmdr pairs each `Foo` definition with a `FooServer` implementation sitting
-	beside it by name, and then *moves* the definition into ReplicatedStorage so
-	clients can parse and autocomplete it. The container is left empty afterwards
-	-- do not keep anything else in it, and do not expect the modules to stay put.
-
-	Register at boot. Clients read the replicated folders once when they load
-	Cmdr, so a client already in the game will not see commands registered later.
+	Cmdr moves each shared definition into its replicated `Commands` folder. The
+	client service observes that folder, so commands registered after a client has
+	loaded are registered there as well.
 
 	```lua
 	CmdrService:RegisterCommandsIn(ServerScriptService.Commands)
@@ -120,18 +142,11 @@ function CmdrService.RegisterCommandsIn(self: CmdrService, container: Instance):
 end
 
 --[=[
-	Registers a command from a plain table -- its properties and its Run together,
-	no ModuleScripts anywhere -- and replicates it to clients so they can parse and
-	autocomplete it.
+	Registers a command from a table and server execution function.
 
-	`Run` stays on the server. It is stripped before the definition goes out,
-	because Cmdr runs a command on whichever machine holds a definition with a Run
-	in it, so a client given the real thing would execute it itself instead of
-	asking the server.
-
-	Only plain data replicates. `ClientRun`, `Data`, and a function-valued `Args`,
-	`Type` or `Default` cannot be sent over a remote -- those need
-	[CmdrService.RegisterCommandsIn] and Cmdr's module convention.
+	Both forms below are supported. The two-argument form makes the replicated
+	definition and server-only execution boundary explicit. The embedded `Run`
+	form remains available for compatibility.
 
 	```lua
 	CmdrService:RegisterCommand({
@@ -139,7 +154,21 @@ end
 		Description = "Kills a player",
 		Group = "Admin",
 		Args = {
-			{ Type = "player", Name = "target", Description = "Who to kill" },
+			{ Type = "player", Name = "target" },
+		},
+	}, function(context, target)
+		target:BreakJoints()
+		return `Killed {target.Name}`
+	end)
+	```
+
+	```lua
+	CmdrService:RegisterCommand({
+		Name = "kill",
+		Description = "Kills a player",
+		Group = "Admin",
+		Args = {
+			{ Type = "player", Name = "target" },
 		},
 		Run = function(context, target)
 			target:BreakJoints()
@@ -148,33 +177,113 @@ end
 	})
 	```
 
+	The definition is JSON encoded into a generated ModuleScript. Consequently,
+	all fields other than `Run` must be JSON-compatible. Use
+	[CmdrService.RegisterCommandsIn] when a command needs function-valued argument
+	types, defaults, `ClientRun`, or other module-only behavior.
+
 	@within CmdrService
 	@param definition CommandDefinition
+	@param execute CommandExecute?
 	@return Promise<()>
 ]=]
 function CmdrService.RegisterCommand(
 	self: CmdrService,
-	definition: CmdrServiceUtils.CommandDefinition
+	definition: CmdrServiceUtils.CommandDefinition,
+	execute: CmdrServiceUtils.CommandExecute?
 ): Promise.Promise<()>
-	const replicated = CmdrServiceUtils.getReplicatedCommand(definition)
-	const packet = CmdrServiceUtils.serializeCommand(replicated)
+	assert(self._promiseCmdr, "Not initialized")
+	assert(type(definition) == "table", "Bad definition")
+	assert(t.string(definition.Name) and definition.Name ~= "", "Bad definition.Name")
+	assert(definition.Description == nil or t.string(definition.Description), "Bad definition.Description")
+	assert(definition.Group == nil or t.string(definition.Group), "Bad definition.Group")
+	assert(definition.Aliases == nil or t.array(t.string)(definition.Aliases), "Bad definition.Aliases")
+	assert(definition.AutoExec == nil or t.array(t.string)(definition.AutoExec), "Bad definition.AutoExec")
+	assert(definition.Args == nil or t.table(definition.Args), "Bad definition.Args")
+
+	const commandExecute = execute or definition.Run
+	assert(t.callback(commandExecute), "No command execution function")
+
+	const commandData = table.clone(definition)
+	commandData.Run = nil
+
+	const encodedSuccessfully, encodedDataOrError = (pcall :: any)(HttpService.JSONEncode, HttpService, commandData)
+	assert(
+		encodedSuccessfully,
+		`Command {definition.Name} contains data that cannot be replicated through its definition template: {tostring(
+			encodedDataOrError
+		)}`
+	)
+
+	const commandId = `{definition.Name}_{HttpService:GenerateGUID(false)}`
+	const commandNameKey = string.lower(definition.Name)
+	self._definitionData[commandId] = commandData
+	self._executeData[commandId] = commandExecute :: CmdrServiceUtils.CommandExecute
+	self._commandIdsByName[commandNameKey] = commandId
+
+	const commandServerScript = self._cmdrTemplateProviderServer:CloneTemplate("CmdrExecutionTemplate")
+	assert(commandServerScript:IsA("ModuleScript"), "CmdrExecutionTemplate must be a ModuleScript")
+	commandServerScript.Name = `{commandId}Server`
+	self._maid:Add(commandServerScript)
+
+	const cmdrServiceTarget = Instance.new("ObjectValue")
+	cmdrServiceTarget.Name = "CmdrServiceTarget"
+	cmdrServiceTarget.Value = script
+	cmdrServiceTarget.Parent = commandServerScript
+
+	const cmdrServiceId = Instance.new("StringValue")
+	cmdrServiceId.Name = "CmdrServiceId"
+	cmdrServiceId.Value = self._serviceId
+	cmdrServiceId.Parent = commandServerScript
+
+	const cmdrCommandId = Instance.new("StringValue")
+	cmdrCommandId.Name = "CmdrCommandId"
+	cmdrCommandId.Value = commandId
+	cmdrCommandId.Parent = commandServerScript
+
+	const commandScript = self._cmdrTemplateProviderServer:CloneTemplate("CmdrCommandDefinitionTemplate")
+	assert(commandScript:IsA("ModuleScript"), "CmdrCommandDefinitionTemplate must be a ModuleScript")
+	commandScript.Name = commandId
+	self._maid:Add(commandScript)
+
+	const cmdrJsonCommandData = Instance.new("StringValue")
+	cmdrJsonCommandData.Name = "CmdrJsonCommandData"
+	cmdrJsonCommandData.Value = encodedDataOrError :: string
+	cmdrJsonCommandData.Parent = commandScript
 
 	return self:PromiseCmdr():Then(function(cmdr)
-		cmdr.Registry:RegisterCommandObject(definition)
+		if self._commandIdsByName[commandNameKey] ~= commandId then
+			self._definitionData[commandId] = nil
+			self._executeData[commandId] = nil
+			commandScript:Destroy()
+			commandServerScript:Destroy()
+			return
+		end
 
-		self._commandDefinitions:Set(replicated.Name, packet)
-		CmdrServiceNetwork.packets.commandsReplicated.sendToAll({ packet })
+		cmdr.Registry:RegisterCommand(commandScript, commandServerScript)
+
+		const oldCommandId = self._registeredCommandIdsByName[commandNameKey]
+		const oldCommandScript = self._commandScriptsByName[commandNameKey]
+		const oldCommandServerScript = self._commandServerScriptsByName[commandNameKey]
+		self._registeredCommandIdsByName[commandNameKey] = commandId
+		self._commandScriptsByName[commandNameKey] = commandScript
+		self._commandServerScriptsByName[commandNameKey] = commandServerScript
+
+		if oldCommandId and oldCommandId ~= commandId then
+			self._definitionData[oldCommandId] = nil
+			self._executeData[oldCommandId] = nil
+		end
+		if oldCommandScript and oldCommandScript ~= commandScript then
+			oldCommandScript:Destroy()
+		end
+		if oldCommandServerScript and oldCommandServerScript ~= commandServerScript then
+			oldCommandServerScript:Destroy()
+		end
 	end)
 end
 
 --[=[
-	Registers every type in a container once Cmdr has loaded. Like commands, the
-	modules are moved into ReplicatedStorage, since clients need types to parse
-	arguments.
-
-	```lua
-	CmdrService:RegisterTypesIn(ReplicatedStorage.CmdrTypes)
-	```
+	Registers every Cmdr type module beneath a container.
 
 	@within CmdrService
 	@param container Instance
@@ -189,13 +298,10 @@ function CmdrService.RegisterTypesIn(self: CmdrService, container: Instance): Pr
 end
 
 --[=[
-	Registers a single type once Cmdr has loaded.
+	Registers a server-only Cmdr type object.
 
-	:::warning
-	Server-only. A type registered this way is not replicated, so clients cannot
-	parse or autocomplete arguments using it. Prefer
-	[CmdrService.RegisterTypesIn] with a module, which is.
-	:::
+	Prefer [CmdrService.RegisterTypesIn] when clients must parse or autocomplete
+	the type.
 
 	@within CmdrService
 	@param name string
@@ -212,8 +318,7 @@ function CmdrService.RegisterType(self: CmdrService, name: string, typeObject: a
 end
 
 --[=[
-	Registers every hook in a container once Cmdr has loaded. Each module is
-	called with the registry, exactly like a type.
+	Registers every Cmdr hook module beneath a container.
 
 	@within CmdrService
 	@param container Instance
@@ -228,12 +333,35 @@ function CmdrService.RegisterHooksIn(self: CmdrService, container: Instance): Pr
 end
 
 --[=[
-	Returns the promised Cmdr instance
+	Returns the promised server Cmdr instance.
+
 	@within CmdrService
 	@return Promise<any>
 ]=]
-function CmdrService.PromiseCmdr(self: CmdrService)
+function CmdrService.PromiseCmdr(self: CmdrService): Promise.Promise<any>
+	assert(self._promiseCmdr, "Not initialized")
 	return self._promiseCmdr
+end
+
+function CmdrService.__executeCommand(self: CmdrService, cmdrCommandId: string, ...: any): ...any
+	assert(type(cmdrCommandId) == "string", "Bad cmdrCommandId")
+	assert(self._promiseCmdr, "CmdrService is not initialized")
+
+	const execute = self._executeData[cmdrCommandId]
+	if not execute then
+		error(`[CmdrService] - No execution function for command id {cmdrCommandId}`)
+	end
+
+	return execute(...)
+end
+
+function CmdrService.__getServiceFromId(_self: CmdrService, cmdrServiceId: string): CmdrService?
+	assert(type(cmdrServiceId) == "string", "Bad cmdrServiceId")
+	return GLOBAL_REGISTRY[cmdrServiceId]
+end
+
+function CmdrService.Destroy(self: CmdrService)
+	self._maid:Destroy()
 end
 
 return CmdrService

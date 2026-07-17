@@ -14,8 +14,6 @@ const PromiseUtils = require("PromiseUtils")
 const PromiseInstanceUtils = require("PromiseInstanceUtils")
 const ServiceBag = require("ServiceBag")
 const StringUtils = require("StringUtils")
-const CmdrServiceNetwork = require("CmdrServiceNetwork")
-const CmdrServiceUtils = require("CmdrServiceUtils")
 
 const Player = Players.LocalPlayer
 
@@ -40,19 +38,9 @@ function CmdrServiceClient.Init(self: CmdrServiceClient, serviceBag: ServiceBag.
 	self._maid = Maid.new()
 	self._permissionServiceClient = self._serviceBag:GetService(PermissionServiceClient)
 
-	-- Listening before asking, so a command registered on the server between our
-	-- request and our registry coming up is not missed. Re-registering is
-	-- harmless -- Cmdr replaces by name.
-	CmdrServiceNetwork.packets.commandsReplicated.listen(function(definitions: { CmdrServiceUtils.CommandPacket })
-		self:PromiseCmdr():Then(function(cmdrClient)
-			for _, packet in definitions do
-				const definition = CmdrServiceUtils.deserializeCommand(packet)
-				cmdrClient.Registry:RegisterCommandObject(definition)
-			end
-		end)
-	end)
-
 	self:PromiseCmdr():Then(function(cmdrClient)
+		self:_watchReplicatedCommands(cmdrClient)
+
 		local store = cmdrClient.Registry:GetStore("ServiceBag")
 		store.ServiceBag = self._serviceBag
 
@@ -87,8 +75,6 @@ function CmdrServiceClient.Start(self: CmdrServiceClient)
 			self._permissionServiceClient:PromisePermissionProvider(),
 		})
 			:Then(function(cmdrClient, permissionProvider)
-				CmdrServiceNetwork.packets.commandsRequested.send(nil)
-
 				self._maid:GiveTask(permissionProvider:ObserveIsAdmin():Subscribe(function(isAdmin)
 					if isAdmin then
 						self._setCmdrBindings(self, cmdrClient)
@@ -143,6 +129,50 @@ function CmdrServiceClient._setCmdrBindings(self: CmdrServiceClient, cmdrClient)
 	end))
 end
 
+function CmdrServiceClient._watchReplicatedCommands(self: CmdrServiceClient, cmdrClient)
+	const commands = cmdrClient.ReplicatedRoot:WaitForChild("Commands")
+
+	local function registerCommand(commandScript: Instance)
+		if not commandScript:IsA("ModuleScript") then
+			return
+		end
+
+		task.spawn(function()
+			const definitionSuccess, definitionOrError = (pcall :: any)(require, commandScript)
+			if not definitionSuccess then
+				warn(`[CmdrServiceClient] - Failed to load command {commandScript.Name}: {definitionOrError}`)
+				return
+			end
+
+			const definition = definitionOrError
+			if type(definition) ~= "table" or type(definition.Name) ~= "string" then
+				warn(`[CmdrServiceClient] - Command {commandScript.Name} returned an invalid definition`)
+				return
+			end
+
+			-- Cmdr registers everything already present when its client module loads.
+			-- Requiring a ModuleScript is cached, so identity tells us whether this
+			-- exact definition has already been registered while still allowing a
+			-- later module to replace a command with the same public name.
+			if cmdrClient.Registry:GetCommand(definition.Name) == definition then
+				return
+			end
+
+			const registerSuccess, registerError = pcall(function()
+				cmdrClient.Registry:RegisterCommand(commandScript)
+			end)
+			if not registerSuccess then
+				warn(`[CmdrServiceClient] - Failed to register command {definition.Name}: {registerError}`)
+			end
+		end)
+	end
+
+	self._maid:Add(commands.ChildAdded:Connect(registerCommand))
+	for _, commandScript in commands:GetChildren() do
+		registerCommand(commandScript)
+	end
+end
+
 function CmdrServiceClient._clearCmdrBindings(self: CmdrServiceClient, cmdrClient)
 	if self._cmdrBindingMaid then
 		self._cmdrBindingMaid:DoCleaning()
@@ -151,6 +181,10 @@ function CmdrServiceClient._clearCmdrBindings(self: CmdrServiceClient, cmdrClien
 
 	cmdrClient:SetActivationKeys({})
 	cmdrClient:Hide()
+end
+
+function CmdrServiceClient.Destroy(self: CmdrServiceClient)
+	self._maid:Destroy()
 end
 
 return CmdrServiceClient

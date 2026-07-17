@@ -1,9 +1,9 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
-local types = require(script.Parent.Parent.types)
-local read = require(script.Parent.read)
 local bufferWriter = require(script.Parent.bufferWriter)
+local read = require(script.Parent.read)
+local types = require(script.Parent.Parent.types)
 
 local alloc = bufferWriter.alloc
 local u8 = bufferWriter.u8
@@ -59,19 +59,21 @@ function clientProcess.sendUnreliable(id: number, writer: (value: any) -> (), da
 	unreliable = bufferWriter.export()
 end
 
-function clientProcess.invoke(id: number, writer: (value: any) -> (), data: {[string]: any}): any
+function clientProcess.invoke(id: number, writer: (value: any) -> (), data: { [string]: any }): any
 	func = load(func)
-	
+
 	alloc(1)
 	u8(id)
 	writer(data)
-	
+
 	func = bufferWriter.export()
-	
+
 	local remoteFunction: RemoteFunction = ReplicatedStorage:WaitForChild("ByteNetQuery")
 	local dumpBuffer, reference = dump(func)
+	func.cursor = 0
+	table.clear(func.references)
 	local response = remoteFunction:InvokeServer(dumpBuffer, reference)
-	
+
 	return response
 end
 
@@ -81,8 +83,6 @@ function clientProcess.start()
 
 	local unreliableRemote = ReplicatedStorage:WaitForChild("ByteNetUnreliable")
 	unreliableRemote.OnClientEvent:Connect(onClientEvent)
-	
-	local remoteFunction: RemoteFunction = ReplicatedStorage:WaitForChild("ByteNetQuery")
 
 	RunService.Heartbeat:Connect(function()
 		-- Again, checking if there's anything in the channel before we send it.
@@ -101,14 +101,6 @@ function clientProcess.start()
 
 			unreliable.cursor = 0
 			table.clear(unreliable.references)
-		end
-		
-		if func.cursor > 0 then
-			local dumpBuffer, reference = dump(func)
-			local Result = remoteFunction:InvokeServer(dumpBuffer, reference)
-						
-			func.cursor = 0
-			table.clear(func.references)
 		end
 	end)
 end

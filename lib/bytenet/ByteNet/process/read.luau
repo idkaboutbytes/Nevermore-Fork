@@ -29,20 +29,6 @@ local function runListener(callback, ...)
 	task.spawn(freeThread :: thread, callback, ...)
 end
 
-local function runQueryListener(callback, ...)
-	local result 
-	if freeThread == nil then
-		freeThread = coroutine.create(yielder)
-		coroutine.resume(freeThread :: thread)
-	end
-
-	task.spawn(freeThread :: thread, function(...)
-		result = callback(...)
-	end, ...)
-		
-	return result
-end
-
 return function(incomingBuffer: buffer, references: { [number]: unknown }?, player: Player?, readType: string?)
 	local length = buffer.len(incomingBuffer)
 	local readCursor = 0
@@ -52,7 +38,7 @@ return function(incomingBuffer: buffer, references: { [number]: unknown }?, play
 
 	while readCursor < length do
 		local readablePacketOrQuery
-		
+
 		if readType == "packet" then
 			readablePacketOrQuery = packetRef[buffer.readu8(incomingBuffer, readCursor)]
 		elseif readType == "query" then
@@ -60,11 +46,16 @@ return function(incomingBuffer: buffer, references: { [number]: unknown }?, play
 		else
 			error("readType not valid.")
 		end
-				
+
 		if not readablePacketOrQuery then
-			error("No readable entity found for ID: " .. buffer.readu8(incomingBuffer, readCursor) .. " for type: " .. readType)
+			error(
+				"No readable entity found for ID: "
+					.. buffer.readu8(incomingBuffer, readCursor)
+					.. " for type: "
+					.. readType
+			)
 		end
-		
+
 		readCursor += 1
 
 		local value, valueLength = readablePacketOrQuery.reader(incomingBuffer, readCursor)
@@ -77,10 +68,11 @@ return function(incomingBuffer: buffer, references: { [number]: unknown }?, play
 			end
 		elseif readType == "query" then
 			for _, listener in readablePacketOrQuery.getListeners() do
-				local response = runQueryListener(listener, value, player)
-				
-				return response
-			end	
+				-- A RemoteFunction already gives this callback its own yielding
+				-- thread. Invoke it directly so a query listener can yield before
+				-- producing its response.
+				return listener(value, player)
+			end
 		end
 	end
 end
