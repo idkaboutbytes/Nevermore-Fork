@@ -53,9 +53,9 @@ const assertCommandDefinition = t.interface({
 -- function cannot be sent over a remote.
 const REPLICATED_COMMAND_KEYS = table.freeze({ "Name", "Aliases", "AutoExec", "Description", "Args", "Group" })
 const COMMAND_METADATA_SCHEMA = Squash.record({
-	Name = Squash.string,
-	Group = Squash.opt(Squash.string),
-	Description = Squash.opt(Squash.string),
+	Name = Squash.string(),
+	Group = Squash.opt(Squash.string()),
+	Description = Squash.opt(Squash.string()),
 })
 
 const function assertNoFunctions(value: any, path: string)
