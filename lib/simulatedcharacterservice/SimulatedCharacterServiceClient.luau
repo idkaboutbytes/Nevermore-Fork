@@ -46,6 +46,7 @@ export type SimulatedCharacterServiceClient = typeof(setmetatable(
 		_charactersById: { [number]: SimulatedCharacterClient.SimulatedCharacterClient },
 		_renderCharacters: { SimulatedCharacterClient.SimulatedCharacterClient },
 		_pendingStatesById: { [number]: PendingState },
+		_pendingSimulationRatesById: { [number]: number },
 		_removedIds: { [number]: boolean },
 		_modelPool: { [string]: { Model } },
 		_defaultIdleAnimationId: string,
@@ -66,6 +67,7 @@ function SimulatedCharacterServiceClient.Init(self: SimulatedCharacterServiceCli
 	self._charactersById = {}
 	self._renderCharacters = {}
 	self._pendingStatesById = {}
+	self._pendingSimulationRatesById = {}
 	self._removedIds = {}
 	self._modelPool = {}
 	self._defaultIdleAnimationId = ""
@@ -86,6 +88,11 @@ function SimulatedCharacterServiceClient.Init(self: SimulatedCharacterServiceCli
 	SimulatedCharacterNetwork.packets.removed.listen(function(id: number)
 		self:_handleRemove(id)
 	end)
+	SimulatedCharacterNetwork.packets.simulationRateChanged.listen(
+		function(data: SimulatedCharacterTypes.NetworkSimulationRate)
+			self:_handleSimulationRate(data.id, data.rate)
+		end
+	)
 	SimulatedCharacterNetwork.packets.stateChanged.listen(function(data: {
 		serverTime: number,
 		state: SimulatedCharacterTypes.NetworkState,
@@ -248,12 +255,18 @@ function SimulatedCharacterServiceClient._handleSpawn(
 
 	const existing = self._charactersById[spawn.state.id]
 	if existing then
+		existing:_setSimulationRate(spawn.definition.simulationRate)
 		existing:_pushState(spawn.state, spawn.serverTime)
 		return
 	end
 
 	const character = SimulatedCharacterClient.new(self, spawn)
 	self._charactersById[spawn.state.id] = character
+	const pendingSimulationRate = self._pendingSimulationRatesById[spawn.state.id]
+	if pendingSimulationRate ~= nil then
+		self._pendingSimulationRatesById[spawn.state.id] = nil
+		character:_setSimulationRate(pendingSimulationRate)
+	end
 	const pendingState = self._pendingStatesById[spawn.state.id]
 	if pendingState then
 		self._pendingStatesById[spawn.state.id] = nil
@@ -284,6 +297,23 @@ function SimulatedCharacterServiceClient._handleState(
 	end
 end
 
+function SimulatedCharacterServiceClient._handleSimulationRate(
+	self: SimulatedCharacterServiceClient,
+	id: number,
+	rate: number
+)
+	if self._destroyed or self._removedIds[id] then
+		return
+	end
+
+	const character = self._charactersById[id]
+	if character then
+		character:_setSimulationRate(rate)
+	else
+		self._pendingSimulationRatesById[id] = rate
+	end
+end
+
 function SimulatedCharacterServiceClient._handleRemove(self: SimulatedCharacterServiceClient, id: number)
 	if self._destroyed then
 		return
@@ -291,6 +321,7 @@ function SimulatedCharacterServiceClient._handleRemove(self: SimulatedCharacterS
 
 	self._removedIds[id] = true
 	self._pendingStatesById[id] = nil
+	self._pendingSimulationRatesById[id] = nil
 	const character = self._charactersById[id]
 	if character then
 		self._charactersById[id] = nil
@@ -394,6 +425,8 @@ function SimulatedCharacterServiceClient.Destroy(self: SimulatedCharacterService
 	end
 	table.clear(self._charactersById)
 	table.clear(self._renderCharacters)
+	table.clear(self._pendingStatesById)
+	table.clear(self._pendingSimulationRatesById)
 	for _, pool in self._modelPool do
 		for _, model in pool do
 			model:Destroy()

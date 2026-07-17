@@ -14,6 +14,7 @@ SimulatedCharacterConstants.Modes = table.freeze({
 })
 
 SimulatedCharacterConstants.DEFAULT_SIMULATION_RATE = 20
+SimulatedCharacterConstants.DEFAULT_CHARACTER_SIMULATION_RATE = 1
 SimulatedCharacterConstants.DEFAULT_SNAPSHOT_RATE = 10
 SimulatedCharacterConstants.DEFAULT_INTERPOLATION_DELAY = 0.1
 SimulatedCharacterConstants.DEFAULT_MAX_EXTRAPOLATION = 0.25

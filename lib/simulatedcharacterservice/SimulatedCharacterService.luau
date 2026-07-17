@@ -486,6 +486,21 @@ function SimulatedCharacterService._onCharacterStateChanged(
 	end
 end
 
+function SimulatedCharacterService._onCharacterSimulationRateChanged(
+	self: SimulatedCharacterService,
+	character: SimulatedCharacter.SimulatedCharacter
+)
+	if self._charactersById[character._id] ~= character then
+		return
+	end
+
+	SimulatedCharacterNetwork.packets.simulationRateChanged.sendToAll({
+		id = character._id,
+		rate = character._simulationRate,
+	})
+	self:_onCharacterStateChanged(character)
+end
+
 function SimulatedCharacterService._getPlayerNetworkInterest(
 	self: SimulatedCharacterService,
 	player: Player
@@ -576,6 +591,7 @@ function SimulatedCharacterService._toNetworkDefinition(
 		templateName = character._templateName,
 		scale = definition.Scale,
 		placementMode = definition.PlacementMode,
+		simulationRate = character._simulationRate,
 		cullDistance = definition.CullDistance,
 		hitboxRadius = definition.HitboxRadius,
 		hitboxHeight = definition.HitboxHeight,

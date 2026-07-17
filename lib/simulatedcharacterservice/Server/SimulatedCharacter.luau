@@ -20,6 +20,8 @@ const SimulatedCharacterTargetingMode = require("SimulatedCharacterTargetingMode
 const SimulatedCharacterTypes = require("SimulatedCharacterTypes")
 const SimulatedCharacterUtils = require("SimulatedCharacterUtils")
 
+const WANDER_TARGET_ATTEMPTS = 8
+
 const SimulatedCharacter = {}
 SimulatedCharacter.ClassName = "SimulatedCharacter"
 SimulatedCharacter.__index = SimulatedCharacter
@@ -40,6 +42,8 @@ export type SimulatedCharacter = typeof(setmetatable(
 		_definition: SimulatedCharacterTypes.ResolvedCharacterDefinition,
 		_templateName: string,
 		_replicationDistance: number,
+		_simulationRate: number,
+		_simulationTime: number,
 		_homePosition: Vector2,
 		_random: Random,
 		_nextRetargetAt: number,
@@ -87,10 +91,12 @@ function SimulatedCharacter.new(
 	self._definition = definition
 	self._templateName = templateName
 	self._replicationDistance = definition.ReplicationDistance
+	self._simulationRate = SimulatedCharacterConstants.DEFAULT_CHARACTER_SIMULATION_RATE
+	self._simulationTime = 0
 	self._homePosition = position
 	self._random = Random.new(id)
-	self._nextRetargetAt = service:_getTime()
-	self._nextWanderAt = service:_getTime()
+	self._nextRetargetAt = 0
+	self._nextWanderAt = 0
 	self._returningHome = false
 	self._hasReachedTarget = false
 	self._targetOffsetAngle = id * 2.399963229728653
@@ -189,6 +195,24 @@ function SimulatedCharacter.SetReplicationDistance(self: SimulatedCharacter, dis
 
 	self._replicationDistance = distance
 	self._service:_onCharacterStateChanged(self)
+end
+
+--[=[
+	Sets this character's local time-scale multiplier. A rate of 0 pauses the
+	character, 0.5 runs it at half speed, and 2 runs it at double speed.
+
+	@within SimulatedCharacter
+	@param rate number
+]=]
+function SimulatedCharacter.SetSimulationRate(self: SimulatedCharacter, rate: number)
+	assert(not self._destroyed, "SimulatedCharacter is destroyed")
+	assert(type(rate) == "number" and rate == rate and rate >= 0 and rate < math.huge, "Bad rate")
+	if self._simulationRate == rate then
+		return
+	end
+
+	self._simulationRate = rate
+	self._service:_onCharacterSimulationRateChanged(self)
 end
 
 --[=[
@@ -349,7 +373,7 @@ function SimulatedCharacter._getTarget(self: SimulatedCharacter): (Vector2?, any
 		if root and root:IsA("BasePart") then
 			local targetPosition = Vector2.new(root.Position.X, root.Position.Z)
 			if self._definition.MovementController == SimulatedCharacterMovementController.ORBIT then
-				const angle = self._service:_getTime() * self._definition.OrbitSpeed + self._targetOffsetAngle
+				const angle = self._simulationTime * self._definition.OrbitSpeed + self._targetOffsetAngle
 				targetPosition += Vector2.new(math.cos(angle), math.sin(angle)) * self._definition.OrbitRadius
 				return targetPosition, self._id
 			elseif self._definition.TargetOffset > 0 then
@@ -374,18 +398,24 @@ function SimulatedCharacter._step(
 	if self._destroyed then
 		return
 	end
+	const simulationDeltaTime = deltaTime * self._simulationRate
+	if simulationDeltaTime <= 0 then
+		return
+	end
+	self._simulationTime += simulationDeltaTime
 
 	if self._mode == SimulatedCharacterConstants.Modes.KINEMATIC then
-		self:_stepController(targetCandidates)
-		self:_stepKinematic(deltaTime, navigation)
+		self:_stepController(targetCandidates, navigation)
+		self:_stepKinematic(simulationDeltaTime, navigation)
 	else
-		self:_stepPhysical(deltaTime, navigation)
+		self:_stepPhysical(simulationDeltaTime, navigation)
 	end
 end
 
 function SimulatedCharacter._stepController(
 	self: SimulatedCharacter,
-	targetCandidates: { SimulatedCharacterTypes.TargetCandidate }
+	targetCandidates: { SimulatedCharacterTypes.TargetCandidate },
+	navigation: any?
 )
 	const definition = self._definition
 	const controller = definition.MovementController
@@ -394,7 +424,7 @@ function SimulatedCharacter._stepController(
 		return
 	end
 
-	const now = self._service:_getTime()
+	const now = self._simulationTime
 	const homeDelta = self._position - self._homePosition
 	if homeDelta:Dot(homeDelta) > definition.LeashRange * definition.LeashRange then
 		self:_setTargetPlayer(nil)
@@ -425,10 +455,21 @@ function SimulatedCharacter._stepController(
 	end
 
 	if controller == SimulatedCharacterMovementController.WANDER then
-		if self._targetPosition == nil or (self._hasReachedTarget and now >= self._nextWanderAt) then
-			const radius = math.sqrt(self._random:NextNumber()) * definition.WanderRadius
-			const angle = self._random:NextNumber(0, 2 * math.pi)
-			self._targetPosition = self._homePosition + Vector2.new(math.cos(angle), math.sin(angle)) * radius
+		const shouldSelectTarget = (self._targetPosition == nil and now >= self._nextWanderAt)
+			or (self._hasReachedTarget and now >= self._nextWanderAt)
+		if shouldSelectTarget then
+			local targetPosition: Vector2? = nil
+			for _ = 1, WANDER_TARGET_ATTEMPTS do
+				const radius = math.sqrt(self._random:NextNumber()) * definition.WanderRadius
+				const angle = self._random:NextNumber(0, 2 * math.pi)
+				const candidate = self._homePosition + Vector2.new(math.cos(angle), math.sin(angle)) * radius
+				if not navigation or navigation:IsWalkable(candidate) then
+					targetPosition = candidate
+					break
+				end
+			end
+
+			self._targetPosition = targetPosition
 			self._nextWanderAt = now + definition.WanderInterval
 			self._returningHome = false
 			self._hasReachedTarget = false
@@ -646,6 +687,7 @@ function SimulatedCharacter._setTargetPlayer(self: SimulatedCharacter, player: P
 end
 
 function SimulatedCharacter._getNetworkState(self: SimulatedCharacter): SimulatedCharacterTypes.NetworkState
+	const simulationRate = self._simulationRate
 	return {
 		id = self._id,
 		x = self._position.X,
@@ -653,9 +695,9 @@ function SimulatedCharacter._getNetworkState(self: SimulatedCharacter): Simulate
 		groundY = self._groundY,
 		height = self._height,
 		yaw = self._yaw,
-		velocityX = self._velocity.X,
-		velocityZ = self._velocity.Y,
-		verticalVelocity = self._verticalVelocity,
+		velocityX = self._velocity.X * simulationRate,
+		velocityZ = self._velocity.Y * simulationRate,
+		verticalVelocity = self._verticalVelocity * simulationRate,
 		mode = self._mode,
 		stateStartedAt = self._stateStartedAt,
 	}

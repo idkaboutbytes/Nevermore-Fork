@@ -33,6 +33,7 @@ export type SimulatedCharacterClient = typeof(setmetatable(
 		_currentState: SimulatedCharacterTypes.NetworkState,
 		_previousTime: number,
 		_currentTime: number,
+		_simulationRate: number,
 		_renderCFrame: CFrame,
 		_modelPivotOffset: CFrame,
 		_rootCFrameOffset: CFrame,
@@ -66,6 +67,7 @@ function SimulatedCharacterClient.new(
 	self._currentState = state
 	self._previousTime = spawn.serverTime
 	self._currentTime = spawn.serverTime
+	self._simulationRate = spawn.definition.simulationRate
 	self._renderCFrame = SimulatedCharacterUtils.toCFrame(state.x, state.z, state.groundY, state.height, state.yaw)
 	self._modelPivotOffset = CFrame.identity
 	self._rootCFrameOffset = CFrame.identity
@@ -194,7 +196,9 @@ function SimulatedCharacterClient._render(self: SimulatedCharacterClient, render
 		z += current.velocityZ * extrapolation
 		height = math.max(
 			0,
-			height + current.verticalVelocity * extrapolation - 0.5 * workspace.Gravity * extrapolation * extrapolation
+			height
+				+ current.verticalVelocity * extrapolation
+				- 0.5 * workspace.Gravity * self._simulationRate ^ 2 * extrapolation * extrapolation
 		)
 	end
 
@@ -394,11 +398,25 @@ function SimulatedCharacterClient._updateAnimation(self: SimulatedCharacterClien
 	self._activeTrack = desiredTrack
 	if desiredTrack then
 		desiredTrack.Looped = true
-		desiredTrack:Play(0.15)
+		desiredTrack:Play(0.15, 1, self._simulationRate)
 		if desiredTrack.Length > 0 then
-			desiredTrack.TimePosition = math.max(0, self._service:_getTime() - state.stateStartedAt)
-				% desiredTrack.Length
+			desiredTrack.TimePosition = math.max(
+				0,
+				(self._service:_getTime() - state.stateStartedAt) * self._simulationRate
+			) % desiredTrack.Length
 		end
+	end
+end
+
+function SimulatedCharacterClient._setSimulationRate(self: SimulatedCharacterClient, rate: number)
+	if self._destroyed or self._simulationRate == rate then
+		return
+	end
+
+	self._simulationRate = rate
+	const activeTrack = self._activeTrack
+	if activeTrack then
+		activeTrack:AdjustSpeed(rate)
 	end
 end
 

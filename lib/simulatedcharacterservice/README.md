@@ -180,10 +180,11 @@ simulatedCharacters:RegisterCharacter("Wanderer", {
 ```
 
 `MANUAL` leaves movement to `MoveTo`, `Chase`, and `Stop`. `CHASE` waits for a
-target, `WANDER` picks points around the spawn home, `GUARD` chases and returns
-home, and `ORBIT` moves around its target. `NEAREST_PLAYER` performs automatic
-target acquisition at `RetargetInterval`; `MANUAL` only uses targets assigned
-through the character handle.
+target, `WANDER` picks walkable points around the spawn home without leaving the
+configured navigation bounds, `GUARD` chases and returns home, and `ORBIT` moves
+around its target. `NEAREST_PLAYER` performs automatic target acquisition at
+`RetargetInterval`; `MANUAL` only uses targets assigned through the character
+handle.
 
 `GROUNDED` interprets a spawn Y as the floor, raises the authoritative hitbox by
 half its height plus `GroundOffset`, centers the visual on X/Z, and places the
@@ -223,6 +224,12 @@ zombie:MoveTo(Vector3.new(100, 0, -40))
 zombie:Stop()
 zombie:Teleport(CFrame.new(20, 3, 20))
 zombie:SetReplicationDistance(300)
+
+-- Per-character time scaling. The default is 1.
+zombie:SetSimulationRate(0.5) -- Half speed
+zombie:SetSimulationRate(2) -- Double speed
+zombie:SetSimulationRate(0) -- Paused
+zombie:SetSimulationRate(1) -- Normal speed
 zombie:Destroy()
 ```
 
@@ -230,6 +237,13 @@ zombie:Destroy()
 placement mode. Knockback can temporarily add visual height above the resolved
 baseline. Facing always stays on X/Z and therefore never tilts a character
 toward a target above or below it.
+
+`SetSimulationRate` changes the character's local passage of time without
+changing the service's global 20 Hz simulation or 10 Hz snapshot schedules. It
+scales movement, turning, targeting timers, wandering, orbiting, knockback,
+gravity, extrapolated velocity, and client animation playback. Rate changes use
+one small reliable packet; the rate is not repeated in periodic movement
+snapshots.
 
 Spawned handles expose lifecycle signals without adding binders or Instances:
 

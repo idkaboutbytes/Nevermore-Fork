@@ -33,6 +33,7 @@ type FlockCharacter = {
 	_mode: number,
 	_position: Vector2,
 	_velocity: Vector2,
+	_simulationRate: number,
 }
 
 type FlockGroup = {
@@ -149,7 +150,7 @@ function SimulatedCharacterFlocking.Step(self: SimulatedCharacterFlocking)
 				end
 
 				neighborCount += 1
-				alignment += neighbor._velocity
+				alignment += neighbor._velocity * neighbor._simulationRate
 				center += neighbor._position
 				const separationDistance = character._definition.HitboxRadius
 					+ neighbor._definition.HitboxRadius

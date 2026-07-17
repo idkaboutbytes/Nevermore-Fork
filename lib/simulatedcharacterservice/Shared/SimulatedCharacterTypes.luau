@@ -187,6 +187,7 @@ export type NetworkDefinition = {
 	templateName: string,
 	scale: number,
 	placementMode: PlacementMode,
+	simulationRate: number,
 	cullDistance: number,
 	hitboxRadius: number,
 	hitboxHeight: number,
@@ -204,6 +205,11 @@ export type NetworkSpawn = {
 export type NetworkSnapshot = {
 	serverTime: number,
 	characters: { NetworkState },
+}
+
+export type NetworkSimulationRate = {
+	id: number,
+	rate: number,
 }
 
 export type NetworkDebugPoint = {

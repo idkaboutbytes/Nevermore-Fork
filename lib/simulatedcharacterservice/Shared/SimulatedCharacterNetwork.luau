@@ -30,6 +30,7 @@ return TableUtils.deepReadonly(ByteNet.defineNamespace("SimulatedCharacters", fu
 		templateName = ByteNet.string,
 		scale = ByteNet.float32,
 		placementMode = ByteNet.uint8,
+		simulationRate = ByteNet.float32,
 		cullDistance = ByteNet.float32,
 		hitboxRadius = ByteNet.float32,
 		hitboxHeight = ByteNet.float32,
@@ -83,6 +84,12 @@ return TableUtils.deepReadonly(ByteNet.defineNamespace("SimulatedCharacters", fu
 			}),
 			removed = ByteNet.definePacket({
 				value = ByteNet.uint32,
+			}),
+			simulationRateChanged = ByteNet.definePacket({
+				value = ByteNet.struct({
+					id = ByteNet.uint32,
+					rate = ByteNet.float32,
+				}),
 			}),
 			stateChanged = ByteNet.definePacket({
 				value = ByteNet.struct({
