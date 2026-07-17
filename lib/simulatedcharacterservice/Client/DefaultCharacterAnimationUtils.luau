@@ -9,6 +9,7 @@
 const require = require("../../Loader").load()
 
 const Promise = require("Promise")
+const RbxAssetUtils = require("RbxAssetUtils")
 
 export type AnimationIds = {
 	idleAnimationId: string,
@@ -31,7 +32,7 @@ const function findAnimationId(container: Instance, names: { string }): string?
 end
 
 const function toAssetId(value: number): string
-	return if value > 0 then `rbxassetid://{value}` else ""
+	return if value > 0 then RbxAssetUtils.toRbxAssetId(value) else ""
 end
 
 --[=[

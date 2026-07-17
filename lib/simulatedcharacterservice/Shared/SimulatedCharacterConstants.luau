@@ -20,6 +20,8 @@ SimulatedCharacterConstants.DEFAULT_MAX_EXTRAPOLATION = 0.25
 SimulatedCharacterConstants.DEFAULT_NAVIGATION_CELL_SIZE = 4
 SimulatedCharacterConstants.DEFAULT_NAVIGATION_AGENT_RADIUS = 2
 SimulatedCharacterConstants.DEFAULT_FLOW_FIELD_REFRESH = 0.25
+SimulatedCharacterConstants.DEFAULT_FLOW_FIELD_PRUNE_INTERVAL = 5
+SimulatedCharacterConstants.DEFAULT_FLOW_FIELD_LIFETIME = 10
 SimulatedCharacterConstants.DEFAULT_OBSTACLE_TAG = "SimulatedCharacterObstacle"
 
 SimulatedCharacterConstants.DEFAULT_MOVE_SPEED = 12

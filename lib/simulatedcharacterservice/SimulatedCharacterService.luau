@@ -50,9 +50,6 @@ function SimulatedCharacterService.Init(self: SimulatedCharacterService, service
 	assert(not (self :: any)._serviceBag, "Already initialized")
 	self._serviceBag = assert(serviceBag, "No serviceBag")
 	self._maid = Maid.new()
-	self._timeSyncService = self._serviceBag:GetService(TimeSyncService)
-	self._clock = assert(self._timeSyncService:GetSyncedClock(), "Server clock is unavailable")
-	self._templateProvider = self._serviceBag:GetService(SimulatedCharacterTemplateProvider)
 	self._definitions = {}
 	self._charactersById = {}
 	self._characters = {}
@@ -60,6 +57,9 @@ function SimulatedCharacterService.Init(self: SimulatedCharacterService, service
 	self._navigation = nil
 	self._simulationAccumulator = 0
 	self._snapshotAccumulator = 0
+	self._timeSyncService = self._serviceBag:GetService(TimeSyncService)
+	self._clock = assert(self._timeSyncService:GetSyncedClock(), "Server clock is unavailable")
+	self._templateProvider = self._serviceBag:GetService(SimulatedCharacterTemplateProvider)
 
 	SimulatedCharacterNetwork.queries.requestInitialState.listen(function(_, player: Player?)
 		if not player then
@@ -70,6 +70,8 @@ function SimulatedCharacterService.Init(self: SimulatedCharacterService, service
 end
 
 function SimulatedCharacterService.Start(self: SimulatedCharacterService)
+	self._simulationAccumulator = self._simulationAccumulator or 0
+	self._snapshotAccumulator = self._snapshotAccumulator or 0
 	self._maid:Add(RunService.Heartbeat:Connect(function(deltaTime: number)
 		self:_step(deltaTime)
 	end))
@@ -241,22 +243,25 @@ function SimulatedCharacterService._step(self: SimulatedCharacterService, deltaT
 	const simulationStep = 1 / SimulatedCharacterConstants.DEFAULT_SIMULATION_RATE
 	const snapshotStep = 1 / SimulatedCharacterConstants.DEFAULT_SNAPSHOT_RATE
 	const boundedDelta = math.min(deltaTime, 0.25)
-	self._simulationAccumulator += boundedDelta
-	self._snapshotAccumulator += boundedDelta
+	local simulationAccumulator = self._simulationAccumulator + boundedDelta
+	local snapshotAccumulator = self._snapshotAccumulator + boundedDelta
 
 	local simulationCount = 0
-	while self._simulationAccumulator >= simulationStep and simulationCount < 5 do
-		self._simulationAccumulator -= simulationStep
+	while simulationAccumulator >= simulationStep and simulationCount < 5 do
+		simulationAccumulator -= simulationStep
 		simulationCount += 1
 		for _, character in self._characters do
 			character:_step(simulationStep, self._navigation)
 		end
 	end
 
-	if self._snapshotAccumulator >= snapshotStep then
-		self._snapshotAccumulator %= snapshotStep
+	if snapshotAccumulator >= snapshotStep then
+		snapshotAccumulator %= snapshotStep
 		self:_sendSnapshot()
 	end
+
+	self._simulationAccumulator = simulationAccumulator
+	self._snapshotAccumulator = snapshotAccumulator
 end
 
 function SimulatedCharacterService._sendSnapshot(self: SimulatedCharacterService)

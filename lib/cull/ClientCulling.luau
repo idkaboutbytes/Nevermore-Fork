@@ -553,7 +553,8 @@ end
 
 function ClientCulling._shouldCullObject(entry: CullableObjectEntry, cameraPosition: Vector3): boolean
 	const objectPosition = entry.Object:GetCullPosition()
-	const radius = if entry.Object.GetCullRadius then math.max(0, entry.Object:GetCullRadius()) else 0
+	const getCullRadius = entry.Object.GetCullRadius
+	const radius = if getCullRadius then math.max(0, getCullRadius(entry.Object)) else 0
 	const distance = if entry.Culled then entry.UncullDistance else entry.CullDistance
 	const effectiveDistance = distance + radius
 	const deltaX = objectPosition.X - cameraPosition.X

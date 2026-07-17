@@ -10,8 +10,8 @@ local BaseClock = require("BaseClock")
 local BaseObject = require("BaseObject")
 local Observable = require("Observable")
 local Signal = require("Signal")
+local TableUtils = require("TableUtils")
 local TimeSyncConstants = require("TimeSyncConstants")
-local TimeSyncUtils = require("TimeSyncUtils")
 local ValueObject = require("ValueObject")
 
 local SlaveClock = setmetatable({}, BaseObject)
@@ -46,13 +46,22 @@ function SlaveClock.new(): SlaveClock
 	local self: SlaveClock = setmetatable(BaseObject.new() :: any, SlaveClock)
 
 	self._ping = self._maid:Add(ValueObject.new(0, "number"))
-
-	self._maid:GiveTask(TimeSyncConstants.NET.syncPulse.listen(function(timeOne: number)
-		self:_handleSyncEventAsync(timeOne)
-	end))
-
-	TimeSyncConstants.NET.requestSync.send(nil)
 	self.SyncedEvent = self._maid:Add(Signal.new())
+
+	const syncPulse = TimeSyncConstants.NET.packets.syncPulse
+	local function handleSyncPulse(timeOne: number)
+		self:_handleSyncEventAsync(timeOne)
+	end
+	syncPulse.listen(handleSyncPulse)
+	self._maid:GiveTask(function()
+		const listeners = syncPulse.getListeners()
+		const index = table.find(listeners, handleSyncPulse)
+		if index then
+			TableUtils.swapRemove(listeners, index)
+		end
+	end)
+
+	TimeSyncConstants.NET.packets.requestSync.send(nil)
 
 	self._clockFunction = function()
 		return self:GetTime()
@@ -154,8 +163,8 @@ function SlaveClock._handleSyncEventAsync(self: SlaveClock, timeOne: number)
 	self.SyncedEvent:Fire()
 end
 
-function SlaveClock._sendDelayRequestAsync(self: SlaveClock, timeThree: number): number
-	return TimeSyncConstants.NET.delayRequest.invoke(timeThree)
+function SlaveClock._sendDelayRequestAsync(_self: SlaveClock, timeThree: number): number
+	return TimeSyncConstants.NET.queries.delayRequest.invoke(timeThree)
 end
 
 return SlaveClock

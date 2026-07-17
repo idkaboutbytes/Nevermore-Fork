@@ -21,8 +21,8 @@ const SimulatedCharacterTypes = require("SimulatedCharacterTypes")
 type FlowField = {
 	targetIndex: number,
 	nextByIndex: { [number]: number },
-	costByIndex: { [number]: number },
 	builtAt: number,
+	lastUsedAt: number,
 }
 
 const NEIGHBORS = table.freeze({
@@ -111,6 +111,10 @@ export type SimulatedCharacterNavigationGrid = typeof(setmetatable(
 		_height: number,
 		_walkable: { boolean },
 		_flowFields: { [any]: FlowField },
+		_costScratch: { [number]: number },
+		_heapIndices: { number },
+		_heapCosts: { number },
+		_lastFlowFieldPruneAt: number,
 		_needsRebuild: boolean,
 	},
 	SimulatedCharacterNavigationGrid
@@ -146,6 +150,10 @@ function SimulatedCharacterNavigationGrid.new(
 	self._height = math.max(1, math.ceil((config.Max.Y - config.Min.Y) / cellSize))
 	self._walkable = table.create(self._width * self._height, true)
 	self._flowFields = {}
+	self._costScratch = {}
+	self._heapIndices = {}
+	self._heapCosts = {}
+	self._lastFlowFieldPruneAt = os.clock()
 	self._needsRebuild = true
 
 	self._maid:Add(CollectionService:GetInstanceAddedSignal(self._obstacleTag):Connect(function()
@@ -218,17 +226,20 @@ function SimulatedCharacterNavigationGrid.GetDirection(
 		return nil
 	end
 
+	const now = os.clock()
+	self:_pruneFlowFields(now)
 	local flowField = self._flowFields[targetKey]
 	if
 		not flowField
 		or (
 			flowField.targetIndex ~= targetIndex
-			and os.clock() - flowField.builtAt >= SimulatedCharacterConstants.DEFAULT_FLOW_FIELD_REFRESH
+			and now - flowField.builtAt >= SimulatedCharacterConstants.DEFAULT_FLOW_FIELD_REFRESH
 		)
 	then
-		flowField = self:_buildFlowField(targetIndex)
+		flowField = self:_buildFlowField(targetIndex, now, flowField)
 		self._flowFields[targetKey] = flowField
 	end
+	flowField.lastUsedAt = now
 
 	const nextIndex = flowField.nextByIndex[positionIndex]
 	if not nextIndex then
@@ -274,6 +285,19 @@ end
 function SimulatedCharacterNavigationGrid._ensureCurrent(self: SimulatedCharacterNavigationGrid)
 	if self._needsRebuild then
 		self:Rebuild()
+	end
+end
+
+function SimulatedCharacterNavigationGrid._pruneFlowFields(self: SimulatedCharacterNavigationGrid, now: number)
+	if now - self._lastFlowFieldPruneAt < SimulatedCharacterConstants.DEFAULT_FLOW_FIELD_PRUNE_INTERVAL then
+		return
+	end
+
+	self._lastFlowFieldPruneAt = now
+	for targetKey, flowField in self._flowFields do
+		if now - flowField.lastUsedAt >= SimulatedCharacterConstants.DEFAULT_FLOW_FIELD_LIFETIME then
+			self._flowFields[targetKey] = nil
+		end
 	end
 end
 
@@ -435,14 +459,21 @@ end
 
 function SimulatedCharacterNavigationGrid._buildFlowField(
 	self: SimulatedCharacterNavigationGrid,
-	targetIndex: number
+	targetIndex: number,
+	now: number,
+	existing: FlowField?
 ): FlowField
-	const costByIndex: { [number]: number } = {
-		[targetIndex] = 0,
-	}
-	const nextByIndex: { [number]: number } = {}
-	const heapIndices = { targetIndex }
-	const heapCosts = { 0 }
+	const costByIndex = self._costScratch
+	const nextByIndex = if existing then existing.nextByIndex else {}
+	const heapIndices = self._heapIndices
+	const heapCosts = self._heapCosts
+	table.clear(costByIndex)
+	table.clear(nextByIndex)
+	table.clear(heapIndices)
+	table.clear(heapCosts)
+	costByIndex[targetIndex] = 0
+	heapIndices[1] = targetIndex
+	heapCosts[1] = 0
 
 	while #heapIndices > 0 do
 		local currentIndex, currentCost = heapPop(heapIndices, heapCosts)
@@ -481,11 +512,18 @@ function SimulatedCharacterNavigationGrid._buildFlowField(
 		end
 	end
 
+	if existing then
+		existing.targetIndex = targetIndex
+		existing.builtAt = now
+		existing.lastUsedAt = now
+		return existing
+	end
+
 	return {
 		targetIndex = targetIndex,
 		nextByIndex = nextByIndex,
-		costByIndex = costByIndex,
-		builtAt = os.clock(),
+		builtAt = now,
+		lastUsedAt = now,
 	}
 end
 

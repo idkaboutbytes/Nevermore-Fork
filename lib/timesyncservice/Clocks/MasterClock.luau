@@ -10,8 +10,8 @@ local BaseClock = require("BaseClock")
 local BaseObject = require("BaseObject")
 local Observable = require("Observable")
 local Rx = require("Rx")
+local TableUtils = require("TableUtils")
 local TimeSyncConstants = require("TimeSyncConstants")
-local TimeSyncUtils = require("TimeSyncUtils")
 
 local MasterClock = setmetatable({}, BaseObject)
 MasterClock.__index = MasterClock
@@ -37,12 +37,30 @@ export type MasterClock =
 function MasterClock.new(): MasterClock
 	local self: MasterClock = setmetatable(BaseObject.new() :: any, MasterClock)
 
-	TimeSyncConstants.NET.requestSync.listen(function(_, player: Player)
-		TimeSyncConstants.NET.syncPulse.sendTo(self:GetTime(), player)
+	const requestSync = TimeSyncConstants.NET.packets.requestSync
+	local function handleRequestSync(_, player: Player)
+		TimeSyncConstants.NET.packets.syncPulse.sendTo(self:GetTime(), player)
+	end
+	requestSync.listen(handleRequestSync)
+	self._maid:GiveTask(function()
+		const listeners = requestSync.getListeners()
+		const index = table.find(listeners, handleRequestSync)
+		if index then
+			TableUtils.swapRemove(listeners, index)
+		end
 	end)
 
-	TimeSyncConstants.NET.delayRequest.listen(function(timeThree: number)
+	const delayRequest = TimeSyncConstants.NET.queries.delayRequest
+	local function handleDelayRequest(timeThree: number)
 		return self:GetTime() - timeThree
+	end
+	delayRequest.listen(handleDelayRequest)
+	self._maid:GiveTask(function()
+		const listeners = delayRequest.getListeners()
+		const index = table.find(listeners, handleDelayRequest)
+		if index then
+			TableUtils.swapRemove(listeners, index)
+		end
 	end)
 
 	self._clockFunction = function()
@@ -97,7 +115,7 @@ function MasterClock.GetTime(_self: MasterClock): number
 end
 
 function MasterClock._forceSync(self: MasterClock): ()
-	TimeSyncConstants.NET.syncPulse.sendToAll(self:GetTime())
+	TimeSyncConstants.NET.packets.syncPulse.sendToAll(self:GetTime())
 end
 
 function MasterClock._startPeriodicSync(self: MasterClock)

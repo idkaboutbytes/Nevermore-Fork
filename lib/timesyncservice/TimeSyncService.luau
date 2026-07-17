@@ -17,12 +17,10 @@ local Observable = require("Observable")
 local Promise = require("Promise")
 local Rx = require("Rx")
 local SlaveClock = require("SlaveClock")
-local TimeSyncConstants = require("TimeSyncConstants")
 local TimeSyncUtils = require("TimeSyncUtils")
 
 local TimeSyncService = {}
 TimeSyncService.ServiceName = "TimeSyncService"
-TimeSyncService.ServiceName = "Shared"
 
 export type SyncedClock = BaseClock.BaseClock
 export type TimeSyncService = typeof(setmetatable(
