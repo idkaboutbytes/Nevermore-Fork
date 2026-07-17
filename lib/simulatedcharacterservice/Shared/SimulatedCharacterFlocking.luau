@@ -13,6 +13,9 @@ const Maid = require("Maid")
 const SimulatedCharacterConstants = require("SimulatedCharacterConstants")
 const TableUtils = require("TableUtils")
 
+const OVERLAP_SOLVER_ITERATIONS = 4
+const OVERLAP_EPSILON = 1e-3
+
 type FlockCharacterDefinition = {
 	FlockGroup: string,
 	HitboxRadius: number,
@@ -150,11 +153,14 @@ function SimulatedCharacterFlocking.Step(self: SimulatedCharacterFlocking)
 				end
 
 				neighborCount += 1
-				alignment += neighbor._velocity * neighbor._simulationRate
+				alignment += neighbor._velocity * (neighbor._simulationRate or 1)
 				center += neighbor._position
 				const separationDistance = character._definition.HitboxRadius
 					+ neighbor._definition.HitboxRadius
-					+ character._definition.FlockSeparationPadding
+					+ math.max(
+						character._definition.FlockSeparationPadding,
+						neighbor._definition.FlockSeparationPadding
+					)
 				if distanceSquared > 1e-6 then
 					const distance = math.sqrt(distanceSquared)
 					if distance < separationDistance then
@@ -195,6 +201,93 @@ function SimulatedCharacterFlocking.Step(self: SimulatedCharacterFlocking)
 			end
 			character._flockSeparation = weightedSeparation
 			character._flockSteering = steering
+		end
+	end
+end
+
+function SimulatedCharacterFlocking._resolveOverlaps(self: SimulatedCharacterFlocking, navigation: any?)
+	for _, group in self._groups do
+		const characters = group.characters
+		if #characters < 2 then
+			continue
+		end
+
+		for _ = 1, OVERLAP_SOLVER_ITERATIONS do
+			local resolvedAny = false
+			for firstIndex = 1, #characters - 1 do
+				const first = characters[firstIndex]
+				if first._mode ~= SimulatedCharacterConstants.Modes.KINEMATIC then
+					continue
+				end
+
+				for secondIndex = firstIndex + 1, #characters do
+					const second = characters[secondIndex]
+					if second._mode ~= SimulatedCharacterConstants.Modes.KINEMATIC then
+						continue
+					end
+
+					const minimumDistance = first._definition.HitboxRadius
+						+ second._definition.HitboxRadius
+						+ math.max(first._definition.FlockSeparationPadding, second._definition.FlockSeparationPadding)
+					local delta = second._position - first._position
+					const distanceSquared = delta:Dot(delta)
+					if minimumDistance <= 0 or distanceSquared >= minimumDistance * minimumDistance then
+						continue
+					end
+
+					local distance = 0
+					if distanceSquared > 1e-6 then
+						distance = math.sqrt(distanceSquared)
+						delta /= distance
+					else
+						const lowerId = math.min(first._id, second._id)
+						const upperId = math.max(first._id, second._id)
+						const angle = (lowerId * 97 + upperId * 57) % 6283 / 1000
+						delta = Vector2.new(math.cos(angle), math.sin(angle))
+						if first._id > second._id then
+							delta = -delta
+						end
+					end
+
+					const correctionDistance = minimumDistance - distance + OVERLAP_EPSILON
+					const firstCanMove = (first._simulationRate or 1) > 0
+					const secondCanMove = (second._simulationRate or 1) > 0
+					if firstCanMove and secondCanMove then
+						const correction = delta * (correctionDistance * 0.5)
+						const firstPosition = first._position - correction
+						const secondPosition = second._position + correction
+						const firstPositionValid = not navigation or navigation:CanMove(first._position, firstPosition)
+						const secondPositionValid = not navigation
+							or navigation:CanMove(second._position, secondPosition)
+						if firstPositionValid and secondPositionValid then
+							first._position = firstPosition
+							second._position = secondPosition
+							resolvedAny = true
+							continue
+						end
+					end
+
+					if firstCanMove then
+						const firstPosition = first._position - delta * correctionDistance
+						if not navigation or navigation:CanMove(first._position, firstPosition) then
+							first._position = firstPosition
+							resolvedAny = true
+							continue
+						end
+					end
+					if secondCanMove then
+						const secondPosition = second._position + delta * correctionDistance
+						if not navigation or navigation:CanMove(second._position, secondPosition) then
+							second._position = secondPosition
+							resolvedAny = true
+						end
+					end
+				end
+			end
+
+			if not resolvedAny then
+				break
+			end
 		end
 	end
 end

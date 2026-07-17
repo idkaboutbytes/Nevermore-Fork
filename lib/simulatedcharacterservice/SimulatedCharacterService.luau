@@ -361,6 +361,7 @@ function SimulatedCharacterService._step(self: SimulatedCharacterService, deltaT
 		for _, character in self._characters do
 			character:_step(simulationStep, self._navigation, self._targetCandidates)
 		end
+		self._flocking:_resolveOverlaps(self._navigation)
 	end
 
 	if snapshotAccumulator >= snapshotStep then
@@ -496,7 +497,7 @@ function SimulatedCharacterService._onCharacterSimulationRateChanged(
 
 	SimulatedCharacterNetwork.packets.simulationRateChanged.sendToAll({
 		id = character._id,
-		rate = character._simulationRate,
+		rate = character._simulationRate or 1,
 	})
 	self:_onCharacterStateChanged(character)
 end
@@ -591,7 +592,7 @@ function SimulatedCharacterService._toNetworkDefinition(
 		templateName = character._templateName,
 		scale = definition.Scale,
 		placementMode = definition.PlacementMode,
-		simulationRate = character._simulationRate,
+		simulationRate = character._simulationRate or 1,
 		cullDistance = definition.CullDistance,
 		hitboxRadius = definition.HitboxRadius,
 		hitboxHeight = definition.HitboxHeight,

@@ -67,7 +67,7 @@ function SimulatedCharacterClient.new(
 	self._currentState = state
 	self._previousTime = spawn.serverTime
 	self._currentTime = spawn.serverTime
-	self._simulationRate = spawn.definition.simulationRate
+	self._simulationRate = spawn.definition.simulationRate or 1
 	self._renderCFrame = SimulatedCharacterUtils.toCFrame(state.x, state.z, state.groundY, state.height, state.yaw)
 	self._modelPivotOffset = CFrame.identity
 	self._rootCFrameOffset = CFrame.identity

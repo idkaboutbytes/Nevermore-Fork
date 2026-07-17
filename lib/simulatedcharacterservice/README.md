@@ -287,7 +287,10 @@ simulatedCharacters:RegisterCharacter("Zombie", {
 Only characters with the same exact group name influence each other. The
 service combines hitbox-based separation, light velocity alignment, and light
 cohesion with the existing path direction. If the blended move is blocked, it
-falls back to the unmodified navigation direction.
+falls back to the unmodified navigation direction. After movement, a symmetric
+bounded overlap solver enforces the combined hitbox radii plus the larger
+configured separation padding without moving a character through blocked
+navigation cells.
 
 Flocking runs only for kinematic movement. Knockback and ragdoll characters do
 not steer or influence their group until they return to kinematic mode. The

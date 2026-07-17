@@ -91,7 +91,7 @@ function SimulatedCharacter.new(
 	self._definition = definition
 	self._templateName = templateName
 	self._replicationDistance = definition.ReplicationDistance
-	self._simulationRate = SimulatedCharacterConstants.DEFAULT_CHARACTER_SIMULATION_RATE
+	self._simulationRate = SimulatedCharacterConstants.DEFAULT_CHARACTER_SIMULATION_RATE or 1
 	self._simulationTime = 0
 	self._homePosition = position
 	self._random = Random.new(id)
@@ -398,7 +398,7 @@ function SimulatedCharacter._step(
 	if self._destroyed then
 		return
 	end
-	const simulationDeltaTime = deltaTime * self._simulationRate
+	const simulationDeltaTime = deltaTime * (self._simulationRate or 1)
 	if simulationDeltaTime <= 0 then
 		return
 	end
@@ -687,7 +687,7 @@ function SimulatedCharacter._setTargetPlayer(self: SimulatedCharacter, player: P
 end
 
 function SimulatedCharacter._getNetworkState(self: SimulatedCharacter): SimulatedCharacterTypes.NetworkState
-	const simulationRate = self._simulationRate
+	const simulationRate = self._simulationRate or 1
 	return {
 		id = self._id,
 		x = self._position.X,
