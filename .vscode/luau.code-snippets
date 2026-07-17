@@ -39,6 +39,67 @@
 		]
 	},
 
+	"Documentation Block": {
+		"scope": "luau,lua",
+		"prefix": "doc",
+		"description": "Luau documentation block",
+		"body": [
+			"--[=[",
+			"\t${1}",
+			"",
+			"\t@within ${2}",
+			"\t@param ${3} ${4}",
+			"\t@returns ${5}",
+			"]=]"
+		]
+	},
+
+	"Service": {
+		"scope": "luau,lua",
+		"prefix": "service",
+		"description": "ServiceBag service in the fork style — Init/Start, exported type, and a Maid",
+		"body": [
+			"--!strict",
+			"--[=[",
+			"\t@class ${1:Some}Service",
+			"]=]",
+			"",
+			"const require = require(\"${2:..}/Loader\").load()",
+			"",
+			"local Maid = require(\"Maid\")",
+			"local ServiceBag = require(\"ServiceBag\")",
+			"",
+			"local ${1:Some}Service = {}",
+			"${1:Some}Service.ServiceName = \"${1:Some}Service\"",
+			"${3:${4|-- ,|}ServiceName is server-only when uncommented}",
+			"",
+			"export type ${1:Some}Service = typeof(setmetatable(",
+			"\t{} :: {",
+			"\t\t_serviceBag: ServiceBag.ServiceBag,",
+			"\t\t_maid: Maid.Maid,",
+			"\t},",
+			"\t{} :: typeof({ __index = ${1:Some}Service })",
+			"))",
+			"",
+			"function ${1:Some}Service.Init(self: ${1:Some}Service, serviceBag: ServiceBag.ServiceBag)",
+			"\tassert(not (self :: any)._serviceBag, \"Already initialized\")",
+			"\tself._serviceBag = assert(serviceBag, \"No serviceBag\")",
+			"\tself._maid = Maid.new()",
+			"",
+			"\t$0",
+			"end",
+			"",
+			"function ${1:Some}Service.Start(self: ${1:Some}Service) end",
+			"",
+			"function ${1:Some}Service.Destroy(self: ${1:Some}Service)",
+			"\tself._maid:Destroy()",
+			"end",
+			"",
+			"return ${1:Some}Service",
+			""
+		]
+	},
+
 	"Class package": {
 		"scope": "luau,lua",
 		"prefix": "class",

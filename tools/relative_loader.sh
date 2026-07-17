@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# fix-loader-paths.sh — normalise every module's Loader require to the correct
+# relative_loader.sh — normalise every module's Loader require to the correct
 # relative depth, so packages and submodules at any nesting resolve `Loader`.
 #
 # The loader bootstrap is a relative require-by-string:
@@ -14,7 +14,7 @@
 # module-folder does not change the count).
 #
 # Usage:
-#   tools/fix-loader-paths.sh [--check]
+#   tools/relative_loader.sh [--check]
 #     (no args)  rewrite every file's Loader require prefix in place
 #     --check    report files whose prefix is wrong; exit 1 if any (for CI)
 #

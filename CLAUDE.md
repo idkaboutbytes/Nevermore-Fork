@@ -14,7 +14,7 @@ lib/
   <package>/<Module>.luau  # one folder per package, e.g. maid/Maid.luau, rx/Rx.luau
 tools/
   import.sh              # copy a package from the dump + swap its bootstrap
-  fix-loader-paths.sh    # normalise every Loader require to the right depth
+  relative_loader.sh    # normalise every Loader require to the right depth
 ```
 
 ## The loader (how modules import each other)
@@ -26,7 +26,7 @@ Two require kinds:
    const require = require("../Loader").load()
    ```
    `Loader.luau` sits at the fork root (`lib/`). The number of `../` depends on nesting — **do not
-   hand-count it**; run `tools/fix-loader-paths.sh` and it sets the correct depth.
+   hand-count it**; run `tools/relative_loader.sh` and it sets the correct depth.
    - `../` climbs one folder; `./` is the current folder.
    - **`init.luau` collapses its folder** (Rojo makes the folder a single ModuleScript whose siblings
      become children), so an `init.luau` needs **one fewer `../`** than a regular file in the same folder
@@ -85,7 +85,7 @@ Two require kinds:
    - `local` → `const` at module scope (incl. `const function` helpers). **Keep `require("Name")` calls.**
    - Colon methods → dot-with-explicit-typed-self; add/verify `export type ClassType`.
    - Apply the naming matrix; move privates below publics; add `@checked` to public typed functions.
-3. **Fix depths**: `tools/fix-loader-paths.sh` (or `--check` in CI) — idempotent.
+3. **Fix depths**: `tools/relative_loader.sh` (or `--check` in CI) — idempotent.
 
 ## Lint / format
 
@@ -95,7 +95,7 @@ Tools come from rokit (`rokit.toml`: rojo, selene, StyLua, luau-lsp). From the f
 stylua lib/                    # format
 stylua --check lib/            # verify formatting
 selene lib/                    # lint
-tools/fix-loader-paths.sh --check   # verify loader require depths
+tools/relative_loader.sh --check   # verify loader require depths
 ```
 
 ## Rx port order (bottom-up)

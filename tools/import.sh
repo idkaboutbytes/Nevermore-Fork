@@ -253,9 +253,17 @@ fi
 
 # --- fix loader require depths across the tree ---------------------------------
 
-if [[ -x "$SCRIPT_DIR/fix-loader-paths.sh" ]]; then
+LOADER_FIXER=""
+for candidate in "$SCRIPT_DIR/relative_loader.sh" "$SCRIPT_DIR/fix-loader-paths.sh"; do
+	if [[ -x "$candidate" ]]; then
+		LOADER_FIXER="$candidate"
+		break
+	fi
+done
+
+if [[ -n "$LOADER_FIXER" ]]; then
 	echo "--- fixing loader require depths ---"
-	"$SCRIPT_DIR/fix-loader-paths.sh"
+	"$LOADER_FIXER"
 else
-	echo "note: tools/fix-loader-paths.sh not found — run it to set '../' depth." >&2
+	echo "note: loader path fixer (tools/relative_loader.sh) not found — run it to set '../' depth." >&2
 fi

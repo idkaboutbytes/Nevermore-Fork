@@ -8,7 +8,7 @@ function t.type(typeName)
 		if valueType == typeName then
 			return true
 		else
-			return false, string.format('%s expected, got %s', typeName, valueType)
+			return false, string.format("%s expected, got %s", typeName, valueType)
 		end
 	end
 end
@@ -19,7 +19,7 @@ function t.typeof(typeName)
 		if valueType == typeName then
 			return true
 		else
-			return false, string.format('%s expected, got %s', typeName, valueType)
+			return false, string.format("%s expected, got %s", typeName, valueType)
 		end
 	end
 end
@@ -35,7 +35,7 @@ function t.any(value)
 	if value ~= nil then
 		return true
 	else
-		return false, 'any expected, got nil'
+		return false, "any expected, got nil"
 	end
 end
 
@@ -48,7 +48,7 @@ end
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.boolean = t.typeof('boolean')
+t.boolean = t.typeof("boolean")
 
 --[[**
 	ensures Lua primitive buffer type
@@ -57,7 +57,7 @@ t.boolean = t.typeof('boolean')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.buffer = t.typeof('buffer')
+t.buffer = t.typeof("buffer")
 
 --[[**
 	ensures Lua primitive thread type
@@ -66,7 +66,7 @@ t.buffer = t.typeof('buffer')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.thread = t.typeof('thread')
+t.thread = t.typeof("thread")
 
 --[[**
 	ensures Lua primitive callback type
@@ -75,8 +75,8 @@ t.thread = t.typeof('thread')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.callback = t.typeof('function')
-t['function'] = t.callback
+t.callback = t.typeof("function")
+t["function"] = t.callback
 
 --[[**
 	ensures Lua primitive none type
@@ -85,8 +85,8 @@ t['function'] = t.callback
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.none = t.typeof('nil')
-t['nil'] = t.none
+t.none = t.typeof("nil")
+t["nil"] = t.none
 
 --[[**
 	ensures Lua primitive string type
@@ -95,7 +95,7 @@ t['nil'] = t.none
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.string = t.typeof('string')
+t.string = t.typeof("string")
 
 --[[**
 	ensures Lua primitive table type
@@ -104,7 +104,7 @@ t.string = t.typeof('string')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.table = t.typeof('table')
+t.table = t.typeof("table")
 
 --[[**
 	ensures Lua primitive userdata type
@@ -113,7 +113,7 @@ t.table = t.typeof('table')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.userdata = t.type('userdata')
+t.userdata = t.type("userdata")
 
 --[[**
 	ensures Lua primitive vector type
@@ -122,7 +122,7 @@ t.userdata = t.type('userdata')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.vector = t.type('vector')
+t.vector = t.type("vector")
 
 --[[**
 	ensures value is a number and non-NaN
@@ -133,14 +133,14 @@ t.vector = t.type('vector')
 **--]]
 function t.number(value)
 	local valueType = typeof(value)
-	if valueType == 'number' then
+	if valueType == "number" then
 		if value == value then
 			return true
 		else
-			return false, 'unexpected NaN value'
+			return false, "unexpected NaN value"
 		end
 	else
-		return false, string.format('number expected, got %s', valueType)
+		return false, string.format("number expected, got %s", valueType)
 	end
 end
 
@@ -153,14 +153,14 @@ end
 **--]]
 function t.nan(value)
 	local valueType = typeof(value)
-	if valueType == 'number' then
+	if valueType == "number" then
 		if value ~= value then
 			return true
 		else
-			return false, 'unexpected non-NaN value'
+			return false, "unexpected non-NaN value"
 		end
 	else
-		return false, string.format('number expected, got %s', valueType)
+		return false, string.format("number expected, got %s", valueType)
 	end
 end
 
@@ -173,7 +173,7 @@ end
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.Axes = t.typeof('Axes')
+t.Axes = t.typeof("Axes")
 
 --[[**
 	ensures Roblox BrickColor type
@@ -182,7 +182,7 @@ t.Axes = t.typeof('Axes')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.BrickColor = t.typeof('BrickColor')
+t.BrickColor = t.typeof("BrickColor")
 
 --[[**
 	ensures Roblox CatalogSearchParams type
@@ -191,7 +191,7 @@ t.BrickColor = t.typeof('BrickColor')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.CatalogSearchParams = t.typeof('CatalogSearchParams')
+t.CatalogSearchParams = t.typeof("CatalogSearchParams")
 
 --[[**
 	ensures Roblox CFrame type
@@ -200,7 +200,7 @@ t.CatalogSearchParams = t.typeof('CatalogSearchParams')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.CFrame = t.typeof('CFrame')
+t.CFrame = t.typeof("CFrame")
 
 --[[**
 	ensures Roblox Color3 type
@@ -209,7 +209,7 @@ t.CFrame = t.typeof('CFrame')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.Color3 = t.typeof('Color3')
+t.Color3 = t.typeof("Color3")
 
 --[[**
 	ensures Roblox ColorSequence type
@@ -218,7 +218,7 @@ t.Color3 = t.typeof('Color3')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.ColorSequence = t.typeof('ColorSequence')
+t.ColorSequence = t.typeof("ColorSequence")
 
 --[[**
 	ensures Roblox ColorSequenceKeypoint type
@@ -227,7 +227,7 @@ t.ColorSequence = t.typeof('ColorSequence')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.ColorSequenceKeypoint = t.typeof('ColorSequenceKeypoint')
+t.ColorSequenceKeypoint = t.typeof("ColorSequenceKeypoint")
 
 --[[**
 	ensures Roblox DateTime type
@@ -236,7 +236,7 @@ t.ColorSequenceKeypoint = t.typeof('ColorSequenceKeypoint')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.DateTime = t.typeof('DateTime')
+t.DateTime = t.typeof("DateTime")
 
 --[[**
 	ensures Roblox DockWidgetPluginGuiInfo type
@@ -245,7 +245,7 @@ t.DateTime = t.typeof('DateTime')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.DockWidgetPluginGuiInfo = t.typeof('DockWidgetPluginGuiInfo')
+t.DockWidgetPluginGuiInfo = t.typeof("DockWidgetPluginGuiInfo")
 
 --[[**
 	ensures Roblox Enum type
@@ -254,7 +254,7 @@ t.DockWidgetPluginGuiInfo = t.typeof('DockWidgetPluginGuiInfo')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.Enum = t.typeof('Enum')
+t.Enum = t.typeof("Enum")
 
 --[[**
 	ensures Roblox EnumItem type
@@ -263,7 +263,7 @@ t.Enum = t.typeof('Enum')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.EnumItem = t.typeof('EnumItem')
+t.EnumItem = t.typeof("EnumItem")
 
 --[[**
 	ensures Roblox Enums type
@@ -272,7 +272,7 @@ t.EnumItem = t.typeof('EnumItem')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.Enums = t.typeof('Enums')
+t.Enums = t.typeof("Enums")
 
 --[[**
 	ensures Roblox Faces type
@@ -281,7 +281,7 @@ t.Enums = t.typeof('Enums')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.Faces = t.typeof('Faces')
+t.Faces = t.typeof("Faces")
 
 --[[**
 	ensures Roblox FloatCurveKey type
@@ -290,7 +290,7 @@ t.Faces = t.typeof('Faces')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.FloatCurveKey = t.typeof('FloatCurveKey')
+t.FloatCurveKey = t.typeof("FloatCurveKey")
 
 --[[**
 	ensures Roblox Font type
@@ -299,7 +299,7 @@ t.FloatCurveKey = t.typeof('FloatCurveKey')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.Font = t.typeof('Font')
+t.Font = t.typeof("Font")
 
 --[[**
 	ensures Roblox Instance type
@@ -308,7 +308,7 @@ t.Font = t.typeof('Font')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.Instance = t.typeof('Instance')
+t.Instance = t.typeof("Instance")
 
 --[[**
 	ensures Roblox NumberRange type
@@ -317,7 +317,7 @@ t.Instance = t.typeof('Instance')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.NumberRange = t.typeof('NumberRange')
+t.NumberRange = t.typeof("NumberRange")
 
 --[[**
 	ensures Roblox NumberSequence type
@@ -326,7 +326,7 @@ t.NumberRange = t.typeof('NumberRange')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.NumberSequence = t.typeof('NumberSequence')
+t.NumberSequence = t.typeof("NumberSequence")
 
 --[[**
 	ensures Roblox NumberSequenceKeypoint type
@@ -335,7 +335,7 @@ t.NumberSequence = t.typeof('NumberSequence')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.NumberSequenceKeypoint = t.typeof('NumberSequenceKeypoint')
+t.NumberSequenceKeypoint = t.typeof("NumberSequenceKeypoint")
 
 --[[**
 	ensures Roblox OverlapParams type
@@ -344,7 +344,7 @@ t.NumberSequenceKeypoint = t.typeof('NumberSequenceKeypoint')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.OverlapParams = t.typeof('OverlapParams')
+t.OverlapParams = t.typeof("OverlapParams")
 
 --[[**
 	ensures Roblox PathWaypoint type
@@ -353,7 +353,7 @@ t.OverlapParams = t.typeof('OverlapParams')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.PathWaypoint = t.typeof('PathWaypoint')
+t.PathWaypoint = t.typeof("PathWaypoint")
 
 --[[**
 	ensures Roblox PhysicalProperties type
@@ -362,7 +362,7 @@ t.PathWaypoint = t.typeof('PathWaypoint')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.PhysicalProperties = t.typeof('PhysicalProperties')
+t.PhysicalProperties = t.typeof("PhysicalProperties")
 
 --[[**
 	ensures Roblox Random type
@@ -371,7 +371,7 @@ t.PhysicalProperties = t.typeof('PhysicalProperties')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.Random = t.typeof('Random')
+t.Random = t.typeof("Random")
 
 --[[**
 	ensures Roblox Ray type
@@ -380,7 +380,7 @@ t.Random = t.typeof('Random')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.Ray = t.typeof('Ray')
+t.Ray = t.typeof("Ray")
 
 --[[**
 	ensures Roblox RaycastParams type
@@ -389,7 +389,7 @@ t.Ray = t.typeof('Ray')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.RaycastParams = t.typeof('RaycastParams')
+t.RaycastParams = t.typeof("RaycastParams")
 
 --[[**
 	ensures Roblox RaycastResult type
@@ -398,7 +398,7 @@ t.RaycastParams = t.typeof('RaycastParams')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.RaycastResult = t.typeof('RaycastResult')
+t.RaycastResult = t.typeof("RaycastResult")
 
 --[[**
 	ensures Roblox RBXScriptConnection type
@@ -407,7 +407,7 @@ t.RaycastResult = t.typeof('RaycastResult')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.RBXScriptConnection = t.typeof('RBXScriptConnection')
+t.RBXScriptConnection = t.typeof("RBXScriptConnection")
 
 --[[**
 	ensures Roblox RBXScriptSignal type
@@ -416,7 +416,7 @@ t.RBXScriptConnection = t.typeof('RBXScriptConnection')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.RBXScriptSignal = t.typeof('RBXScriptSignal')
+t.RBXScriptSignal = t.typeof("RBXScriptSignal")
 
 --[[**
 	ensures Roblox Rect type
@@ -425,7 +425,7 @@ t.RBXScriptSignal = t.typeof('RBXScriptSignal')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.Rect = t.typeof('Rect')
+t.Rect = t.typeof("Rect")
 
 --[[**
 	ensures Roblox Region3 type
@@ -434,7 +434,7 @@ t.Rect = t.typeof('Rect')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.Region3 = t.typeof('Region3')
+t.Region3 = t.typeof("Region3")
 
 --[[**
 	ensures Roblox Region3int16 type
@@ -443,7 +443,7 @@ t.Region3 = t.typeof('Region3')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.Region3int16 = t.typeof('Region3int16')
+t.Region3int16 = t.typeof("Region3int16")
 
 --[[**
 	ensures Roblox TweenInfo type
@@ -452,7 +452,7 @@ t.Region3int16 = t.typeof('Region3int16')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.TweenInfo = t.typeof('TweenInfo')
+t.TweenInfo = t.typeof("TweenInfo")
 
 --[[**
 	ensures Roblox UDim type
@@ -461,7 +461,7 @@ t.TweenInfo = t.typeof('TweenInfo')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.UDim = t.typeof('UDim')
+t.UDim = t.typeof("UDim")
 
 --[[**
 	ensures Roblox UDim2 type
@@ -470,7 +470,7 @@ t.UDim = t.typeof('UDim')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.UDim2 = t.typeof('UDim2')
+t.UDim2 = t.typeof("UDim2")
 
 --[[**
 	ensures Roblox Vector2 type
@@ -479,7 +479,7 @@ t.UDim2 = t.typeof('UDim2')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.Vector2 = t.typeof('Vector2')
+t.Vector2 = t.typeof("Vector2")
 
 --[[**
 	ensures Roblox Vector2int16 type
@@ -488,7 +488,7 @@ t.Vector2 = t.typeof('Vector2')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.Vector2int16 = t.typeof('Vector2int16')
+t.Vector2int16 = t.typeof("Vector2int16")
 
 --[[**
 	ensures Roblox Vector3 type
@@ -497,7 +497,7 @@ t.Vector2int16 = t.typeof('Vector2int16')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.Vector3 = t.typeof('Vector3')
+t.Vector3 = t.typeof("Vector3")
 
 --[[**
 	ensures Roblox Vector3int16 type
@@ -506,7 +506,7 @@ t.Vector3 = t.typeof('Vector3')
 
 	@returns True iff the condition is satisfied, false otherwise
 **--]]
-t.Vector3int16 = t.typeof('Vector3int16')
+t.Vector3int16 = t.typeof("Vector3int16")
 
 --[[**
 	ensures value is a given literal value
@@ -516,12 +516,12 @@ t.Vector3int16 = t.typeof('Vector3int16')
 	@returns A function that will return true iff the condition is passed
 **--]]
 function t.literal(...)
-	local size = select('#', ...)
+	local size = select("#", ...)
 	if size == 1 then
 		local literal = ...
 		return function(value)
 			if value ~= literal then
-				return false, string.format('expected %s, got %s', tostring(literal), tostring(value))
+				return false, string.format("expected %s, got %s", tostring(literal), tostring(value))
 			end
 
 			return true
@@ -589,13 +589,13 @@ end
 function t.integer(value)
 	local success, errMsg = t.number(value)
 	if not success then
-		return false, errMsg or ''
+		return false, errMsg or ""
 	end
 
 	if value % 1 == 0 then
 		return true
 	else
-		return false, string.format('integer expected, got %s', value)
+		return false, string.format("integer expected, got %s", value)
 	end
 end
 
@@ -610,13 +610,13 @@ function t.numberMin(min)
 	return function(value)
 		local success, errMsg = t.number(value)
 		if not success then
-			return false, errMsg or ''
+			return false, errMsg or ""
 		end
 
 		if value >= min then
 			return true
 		else
-			return false, string.format('number >= %s expected, got %s', min, value)
+			return false, string.format("number >= %s expected, got %s", min, value)
 		end
 	end
 end
@@ -638,7 +638,7 @@ function t.numberMax(max)
 		if value <= max then
 			return true
 		else
-			return false, string.format('number <= %s expected, got %s', max, value)
+			return false, string.format("number <= %s expected, got %s", max, value)
 		end
 	end
 end
@@ -654,13 +654,13 @@ function t.numberMinExclusive(min)
 	return function(value)
 		local success, errMsg = t.number(value)
 		if not success then
-			return false, errMsg or ''
+			return false, errMsg or ""
 		end
 
 		if min < value then
 			return true
 		else
-			return false, string.format('number > %s expected, got %s', min, value)
+			return false, string.format("number > %s expected, got %s", min, value)
 		end
 	end
 end
@@ -676,13 +676,13 @@ function t.numberMaxExclusive(max)
 	return function(value)
 		local success, errMsg = t.number(value)
 		if not success then
-			return false, errMsg or ''
+			return false, errMsg or ""
 		end
 
 		if value < max then
 			return true
 		else
-			return false, string.format('number < %s expected, got %s', max, value)
+			return false, string.format("number < %s expected, got %s", max, value)
 		end
 	end
 end
@@ -718,12 +718,12 @@ function t.numberConstrained(min, max)
 	return function(value)
 		local minSuccess, minErrMsg = minCheck(value)
 		if not minSuccess then
-			return false, minErrMsg or ''
+			return false, minErrMsg or ""
 		end
 
 		local maxSuccess, maxErrMsg = maxCheck(value)
 		if not maxSuccess then
-			return false, maxErrMsg or ''
+			return false, maxErrMsg or ""
 		end
 
 		return true
@@ -747,12 +747,12 @@ function t.numberConstrainedExclusive(min, max)
 	return function(value)
 		local minSuccess, minErrMsg = minCheck(value)
 		if not minSuccess then
-			return false, minErrMsg or ''
+			return false, minErrMsg or ""
 		end
 
 		local maxSuccess, maxErrMsg = maxCheck(value)
 		if not maxSuccess then
-			return false, maxErrMsg or ''
+			return false, maxErrMsg or ""
 		end
 
 		return true
@@ -775,7 +775,7 @@ function t.match(pattern)
 		end
 
 		if string.match(value, pattern) == nil then
-			return false, string.format('%q failed to match pattern %q', value, pattern)
+			return false, string.format("%q failed to match pattern %q", value, pattern)
 		end
 
 		return true
@@ -800,7 +800,7 @@ function t.optional(check)
 		if success then
 			return true
 		else
-			return false, string.format('(optional) %s', errMsg or '')
+			return false, string.format("(optional) %s", errMsg or "")
 		end
 	end
 end
@@ -819,7 +819,7 @@ function t.tuple(...)
 		for i, check in ipairs(checks) do
 			local success, errMsg = check(args[i])
 			if success == false then
-				return false, string.format('Bad tuple index #%s:\n\t%s', i, errMsg or '')
+				return false, string.format("Bad tuple index #%s:\n\t%s", i, errMsg or "")
 			end
 		end
 
@@ -839,13 +839,13 @@ function t.keys(check)
 	return function(value)
 		local tableSuccess, tableErrMsg = t.table(value)
 		if tableSuccess == false then
-			return false, tableErrMsg or ''
+			return false, tableErrMsg or ""
 		end
 
 		for key in pairs(value) do
 			local success, errMsg = check(key)
 			if success == false then
-				return false, string.format('bad key %s:\n\t%s', tostring(key), errMsg or '')
+				return false, string.format("bad key %s:\n\t%s", tostring(key), errMsg or "")
 			end
 		end
 
@@ -865,13 +865,13 @@ function t.values(check)
 	return function(value)
 		local tableSuccess, tableErrMsg = t.table(value)
 		if tableSuccess == false then
-			return false, tableErrMsg or ''
+			return false, tableErrMsg or ""
 		end
 
 		for key, val in pairs(value) do
 			local success, errMsg = check(val)
 			if success == false then
-				return false, string.format('bad value for key %s:\n\t%s', tostring(key), errMsg or '')
+				return false, string.format("bad value for key %s:\n\t%s", tostring(key), errMsg or "")
 			end
 		end
 
@@ -896,12 +896,12 @@ function t.map(keyCheck, valueCheck)
 	return function(value)
 		local keySuccess, keyErr = keyChecker(value)
 		if not keySuccess then
-			return false, keyErr or ''
+			return false, keyErr or ""
 		end
 
 		local valueSuccess, valueErr = valueChecker(value)
 		if not valueSuccess then
-			return false, valueErr or ''
+			return false, valueErr or ""
 		end
 
 		return true
@@ -935,7 +935,7 @@ do
 		return function(value)
 			local keySuccess, keyErrMsg = arrayKeysCheck(value)
 			if keySuccess == false then
-				return false, string.format('[array] %s', keyErrMsg or '')
+				return false, string.format("[array] %s", keyErrMsg or "")
 			end
 
 			-- # is unreliable for sparse arrays
@@ -948,13 +948,13 @@ do
 
 			for key in pairs(value) do
 				if key < 1 or key > arraySize then
-					return false, string.format('[array] key %s must be sequential', tostring(key))
+					return false, string.format("[array] key %s must be sequential", tostring(key))
 				end
 			end
 
 			local valueSuccess, valueErrMsg = valuesCheck(value)
 			if not valueSuccess then
-				return false, string.format('[array] %s', valueErrMsg or '')
+				return false, string.format("[array] %s", valueErrMsg or "")
 			end
 
 			return true
@@ -975,18 +975,18 @@ do
 		return function(value)
 			local keySuccess, keyErrMsg = arrayKeysCheck(value)
 			if keySuccess == false then
-				return false, string.format('[strictArray] %s', keyErrMsg or '')
+				return false, string.format("[strictArray] %s", keyErrMsg or "")
 			end
 
 			-- If there's more than the set array size, disallow
 			if #valueTypes < #value then
-				return false, string.format('[strictArray] Array size exceeds limit of %d', #valueTypes)
+				return false, string.format("[strictArray] Array size exceeds limit of %d", #valueTypes)
 			end
 
 			for idx, typeFn in pairs(valueTypes) do
 				local typeSuccess, typeErrMsg = typeFn(value[idx])
 				if not typeSuccess then
-					return false, string.format('[strictArray] Array index #%d - %s', idx, typeErrMsg)
+					return false, string.format("[strictArray] Array index #%d - %s", idx, typeErrMsg)
 				end
 			end
 
@@ -1015,7 +1015,7 @@ do
 				end
 			end
 
-			return false, 'bad type for union'
+			return false, "bad type for union"
 		end
 	end
 
@@ -1039,7 +1039,7 @@ do
 			for _, check in ipairs(checks) do
 				local success, errMsg = check(value)
 				if not success then
-					return false, errMsg or ''
+					return false, errMsg or ""
 				end
 			end
 
@@ -1067,13 +1067,13 @@ do
 		return function(value)
 			local tableSuccess, tableErrMsg = t.table(value)
 			if tableSuccess == false then
-				return false, tableErrMsg or ''
+				return false, tableErrMsg or ""
 			end
 
 			for key, check in pairs(checkTable) do
 				local success, errMsg = check(value[key])
 				if success == false then
-					return false, string.format('[interface] bad value for %s:\n\t%s', tostring(key), errMsg or '')
+					return false, string.format("[interface] bad value for %s:\n\t%s", tostring(key), errMsg or "")
 				end
 			end
 
@@ -1093,19 +1093,19 @@ do
 		return function(value)
 			local tableSuccess, tableErrMsg = t.table(value)
 			if tableSuccess == false then
-				return false, tableErrMsg or ''
+				return false, tableErrMsg or ""
 			end
 
 			for key, check in pairs(checkTable) do
 				local success, errMsg = check(value[key])
 				if success == false then
-					return false, string.format('[interface] bad value for %s:\n\t%s', tostring(key), errMsg or '')
+					return false, string.format("[interface] bad value for %s:\n\t%s", tostring(key), errMsg or "")
 				end
 			end
 
 			for key in pairs(value) do
 				if not checkTable[key] then
-					return false, string.format('[interface] unexpected field %q', tostring(key))
+					return false, string.format("[interface] unexpected field %q", tostring(key))
 				end
 			end
 
@@ -1132,11 +1132,11 @@ function t.instanceOf(className, childTable)
 	return function(value)
 		local instanceSuccess, instanceErrMsg = t.Instance(value)
 		if not instanceSuccess then
-			return false, instanceErrMsg or ''
+			return false, instanceErrMsg or ""
 		end
 
 		if value.ClassName ~= className then
-			return false, string.format('%s expected, got %s', className, value.ClassName)
+			return false, string.format("%s expected, got %s", className, value.ClassName)
 		end
 
 		if childrenCheck then
@@ -1159,7 +1159,7 @@ t.instance = t.instanceOf
 
 	@returns A function that will return true iff the condition is passed
 **--]]
-function t.instanceIsA(className, childTable)
+function t.instanceIsA(className, childTable: any?)
 	assert(t.string(className))
 
 	local childrenCheck
@@ -1170,11 +1170,11 @@ function t.instanceIsA(className, childTable)
 	return function(value)
 		local instanceSuccess, instanceErrMsg = t.Instance(value)
 		if not instanceSuccess then
-			return false, instanceErrMsg or ''
+			return false, instanceErrMsg or ""
 		end
 
 		if not value:IsA(className) then
-			return false, string.format('%s expected, got %s', className, value.ClassName)
+			return false, string.format("%s expected, got %s", className, value.ClassName)
 		end
 
 		if childrenCheck then
@@ -1206,7 +1206,7 @@ function t.enum(enum)
 		if value.EnumType == enum then
 			return true
 		else
-			return false, string.format('enum of %s expected, got enum of %s', tostring(enum), tostring(value.EnumType))
+			return false, string.format("enum of %s expected, got enum of %s", tostring(enum), tostring(value.EnumType))
 		end
 	end
 end
@@ -1264,7 +1264,7 @@ do
 		return function(value)
 			local instanceSuccess, instanceErrMsg = t.Instance(value)
 			if not instanceSuccess then
-				return false, instanceErrMsg or ''
+				return false, instanceErrMsg or ""
 			end
 
 			local childrenByName = {}
@@ -1272,7 +1272,7 @@ do
 				local name = child.Name
 				if checkTable[name] then
 					if childrenByName[name] then
-						return false, string.format('Cannot process multiple children with the same name %q', name)
+						return false, string.format("Cannot process multiple children with the same name %q", name)
 					end
 
 					childrenByName[name] = child
@@ -1282,7 +1282,7 @@ do
 			for name, check in pairs(checkTable) do
 				local success, errMsg = check(childrenByName[name])
 				if not success then
-					return false, string.format('[%s.%s] %s', value:GetFullName(), name, errMsg or '')
+					return false, string.format("[%s.%s] %s", value:GetFullName(), name, errMsg or "")
 				end
 			end
 
