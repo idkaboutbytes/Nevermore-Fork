@@ -14,8 +14,13 @@ const RxPlayerUtils = require("RxPlayerUtils")
 const ProfileStore = require("ProfileStore")
 const ObservableSet = require("ObservableSet")
 const ObservableMap = require("ObservableMap")
+const Observable = require("Observable")
+const Signal = require("Signal")
+const Rx = require("Rx")
 const t = require("t")
 const Promise = require("Promise")
+const PromiseUtils = require("PromiseUtils")
+const BindToCloseService = require("BindToCloseService")
 const Squash = require("Squash")
 const TableUtils = require("TableUtils")
 const AttributeUtils = require("AttributeUtils")
@@ -26,6 +31,14 @@ const DataServiceUtils = require("DataServiceUtils")
 const PROFILE_NAME = "Default"
 const PROFILE_VERSION = 1
 
+-- How long a transaction callback may run before it loses its locks. Generous:
+-- a callback that has not decided by now is never going to.
+const TRANSACTION_TIMEOUT_SECONDS = 10
+
+-- Kept under Roblox's 30 second BindToClose budget, so a profile that never
+-- reports its save cannot hold the shutdown open until it is killed anyway
+const SAVE_TIMEOUT_SECONDS = 20
+
 const DataService = {}
 DataService.ServiceName = "DataService"
 
@@ -33,11 +46,16 @@ export type DataService = typeof(setmetatable(
 	{} :: {
 		_serviceBag: ServiceBag.ServiceBag,
 		_maid: Maid.Maid,
+		_bindToCloseService: BindToCloseService.BindToCloseService,
 
 		_attributeKeys: ObservableSet.ObservableSet<string>,
 		_hiddenKeys: ObservableSet.ObservableSet<string>,
 		_profileList: ObservableMap.ObservableMap<Player, ProfileStore.Profile<any>>,
 		_customReplicators: ObservableMap.ObservableMap<string, () -> ()>,
+		_valueChanged: Signal.Signal<Player, string, any>,
+
+		_lockedPlayers: { [Player]: true },
+		_playerUnlocked: Signal.Signal<>,
 
 		DataStore: ProfileStore.ProfileStore<any>,
 	},
@@ -48,16 +66,17 @@ function DataService.Init(self: DataService, serviceBag: ServiceBag.ServiceBag)
 	assert(not (self :: any)._serviceBag, "Already initialized")
 	self._serviceBag = assert(serviceBag, "No serviceBag")
 	self._maid = Maid.new()
+	self._bindToCloseService = self._serviceBag:GetService(BindToCloseService)
 
 	self._attributeKeys = self._maid:Add(ObservableSet.new())
 	self._hiddenKeys = self._maid:Add(ObservableSet.new())
 	self._profileList = self._maid:Add(ObservableMap.new())
 	self._customReplicators = self._maid:Add(ObservableMap.new())
+	self._valueChanged = self._maid:Add(Signal.new())
 
-	-- The template has to reach ProfileStore.New: both Reconcile and new-profile
-	-- creation read it back off the store, so a store built without one hands out
-	-- empty data the schema cannot serialize. Copied because ProfileData is
-	-- readonly and ProfileStore takes ownership of the table.
+	self._lockedPlayers = setmetatable({}, { __mode = "k" }) :: any
+	self._playerUnlocked = self._maid:Add(Signal.new())
+
 	self.DataStore = ProfileStore.New(self:GetStoreNameAndVersion(), TableUtils.deepCopy(ProfileData.Template))
 end
 
@@ -69,6 +88,10 @@ function DataService.Start(self: DataService)
 		warn(`[DataService] - Using Mock DataStore`)
 		self.DataStore = self.DataStore.Mock :: any
 	end
+
+	self._maid:GiveTask(self._bindToCloseService:RegisterPromiseOnCloseCallback(function()
+		return self:SaveAllProfilesAsync()
+	end))
 
 	self._maid:Add(RxPlayerUtils.observePlayersBrio():Subscribe(function(brio)
 		const maid, player = brio:ToMaidAndValue()
@@ -262,6 +285,10 @@ function DataService.ReplicateValue(self: DataService, player: Player, keyName: 
 		AttributeUtils.setAttribute(player, keyName, keyValue)
 	end
 
+	-- Fired before the hidden-key check: hiding a key withholds it from the
+	-- client, but it is still the player's data and still observable here
+	self._valueChanged:Fire(player, keyName, keyValue)
+
 	if self._hiddenKeys:Contains(keyName) then
 		return true
 	end
@@ -376,6 +403,51 @@ function DataService.DeleteProfileAsync(self: DataService, player: Player)
 end
 
 --[=[
+	Flushes a player's profile to the DataStore, resolving once the write has
+	actually landed rather than once it has been asked for.
+
+	Resolves immediately for a player with no profile, or whose session already
+	ended -- there is nothing to save and nothing to wait for.
+
+	@within DataService
+	@param player Player
+	@return Promise<()>
+]=]
+function DataService.SaveProfile(self: DataService, player: Player): Promise.Promise<any>
+	assert(t.instanceIsA("Player")(player), "Bad player")
+
+	const profile = self:GetProfile(player)
+	if not profile or not profile:IsActive() then
+		return Promise.resolved()
+	end
+
+	-- Profile:Save() spawns the write and returns straight away, so the profile
+	-- has to tell us when it is done. Connected first: the save can land before
+	-- the call returns.
+	const promise = PromiseUtils.fromSignal((profile :: any).OnAfterSave)
+	profile:Save()
+
+	return PromiseUtils.timeout(SAVE_TIMEOUT_SECONDS, promise)
+end
+
+--[=[
+	Flushes every loaded profile, resolving once they have all landed. Registered
+	as a [BindToCloseService] callback so a shutdown waits for it.
+
+	@within DataService
+	@return Promise<()>
+]=]
+function DataService.SaveAllProfilesAsync(self: DataService): Promise.Promise<any>
+	const promises = {}
+
+	for _, player in self._profileList:GetKeyList() do
+		table.insert(promises, self:SaveProfile(player))
+	end
+
+	return PromiseUtils.all(promises)
+end
+
+--[=[
 	Gets a Value from within a players profile
 
 	@within DataService
@@ -391,6 +463,90 @@ function DataService.GetValue<T>(self: DataService, player: Player, keyName: str
 	assert(profile ~= nil and profile:IsActive(), "Bad profile")
 
 	return (profile.Data :: any)[keyName] :: T?
+end
+
+--[=[
+	Observes a player's whole profile, firing with the current data and again on
+	every change. Completes nothing when the player leaves -- it simply stops
+	firing, since the profile is gone.
+
+	Fires a deep copy, so mutating what you receive does not touch the profile.
+	Prefer [DataService.ObserveAtKey] unless you really need the whole thing.
+
+	@within DataService
+	@param player Player
+	@return Observable<any>
+]=]
+function DataService.Observe(self: DataService, player: Player): Observable.Observable<any>
+	assert(t.instanceIsA("Player")(player), "Bad player")
+
+	return Observable.new(function(sub)
+		const maid = Maid.new()
+
+		const function update()
+			const profile = self:GetProfile(player)
+			if profile then
+				sub:Fire(TableUtils.deepCopy(profile.Data))
+			end
+		end
+
+		maid:GiveTask(self._valueChanged:Connect(function(changedPlayer: Player)
+			if changedPlayer == player then
+				update()
+			end
+		end))
+
+		update()
+
+		return maid
+	end)
+end
+
+--[=[
+	Observes a single value in a player's profile, firing with the current value
+	and again on every change. Supports nested dot-separated paths.
+
+	```lua
+	DataService:ObserveAtKey(player, "Coins")
+	DataService:ObserveAtKey(player, "Inventory.MaxItems")
+	```
+
+	@within DataService
+	@param player Player
+	@param keyName string
+	@return Observable<any>
+]=]
+function DataService.ObserveAtKey<T>(self: DataService, player: Player, keyName: string): Observable.Observable<T?>
+	assert(t.instanceIsA("Player")(player), "Bad player")
+	assert(t.string(keyName), "Bad keyName")
+
+	const rootKey = DataServiceUtils.splitValuePath(keyName)
+
+	return Observable.new(function(sub)
+		const maid = Maid.new()
+
+		const function update()
+			const profile = self:GetProfile(player)
+			if profile then
+				sub:Fire(DataServiceUtils.readValuePath(profile.Data, keyName))
+			end
+		end
+
+		maid:GiveTask(self._valueChanged:Connect(function(changedPlayer: Player, changedKey: string)
+			-- Any write sharing our root key can move this path, in either
+			-- direction: writing "Inventory" changes "Inventory.MaxItems", and
+			-- writing "Inventory.MaxItems" changes "Inventory"
+			if changedPlayer == player and DataServiceUtils.splitValuePath(changedKey) == rootKey then
+				update()
+			end
+		end))
+
+		update()
+
+		return maid
+	end):Pipe({
+		Rx.distinct() :: any,
+	}) :: any
 end
 
 --[=[
@@ -477,6 +633,160 @@ function DataService.UpdateProfile(self: DataService, player: Player, callback: 
 	end
 
 	return newData
+end
+
+--[=[
+	Applies one change across two profiles atomically -- a trade, a gift, buying
+	something for somebody else. Either both profiles commit or neither does, so
+	nothing can be created or destroyed in between.
+
+	The callback receives a deep copy of each player's data and returns the two
+	new versions. Return nothing to veto: the transaction rejects and neither
+	profile is touched, which is how you turn down a trade that no longer adds up.
+
+	```lua
+	DataService:TransactionAsync(seller, buyer, function(sellerData, buyerData)
+		if buyerData.Coins < 100 or not table.find(sellerData.Inventory, itemId) then
+			return -- veto, nothing is written
+		end
+
+		buyerData.Coins -= 100
+		sellerData.Coins += 100
+		table.remove(sellerData.Inventory, table.find(sellerData.Inventory, itemId))
+		table.insert(buyerData.Inventory, itemId)
+
+		return sellerData, buyerData
+	end)
+	```
+
+	The callback may yield, but the less it does the better. It holds both
+	players' transaction locks while it runs, it has TRANSACTION_TIMEOUT_SECONDS
+	to finish before it is abandoned and the transaction rejects, and if either
+	profile is written by anything else in the meantime the transaction rejects
+	rather than commit on top of a stale read.
+
+	@within DataService
+	@param playerA Player
+	@param playerB Player
+	@param callback (dataA, dataB) -> (dataA?, dataB?)
+	@return Promise<any, any> -- Both players' new data
+]=]
+function DataService.TransactionAsync(
+	self: DataService,
+	playerA: Player,
+	playerB: Player,
+	callback: (any, any) -> (any?, any?)
+): Promise.Promise<any>
+	assert(t.instanceIsA("Player")(playerA), "Bad playerA")
+	assert(t.instanceIsA("Player")(playerB), "Bad playerB")
+	assert(playerA ~= playerB, "Cannot transact a player with themselves")
+	assert(t.callback(callback), "Bad callback")
+
+	return Promise.spawn(function(resolve, reject: (...any) -> ())
+		const maid = Maid.new()
+
+		-- Locked in a fixed order every time. Two transactions sharing a player
+		-- can otherwise each hold the lock the other is waiting on
+		const ordered = { playerA, playerB }
+		table.sort(ordered, function(left: Player, right: Player)
+			return left.UserId < right.UserId
+		end)
+
+		for _, player in ordered do
+			while self._lockedPlayers[player] do
+				self._playerUnlocked:Wait()
+			end
+
+			self._lockedPlayers[player] = true
+		end
+
+		-- Every exit below runs through the maid, so the locks come back whether
+		-- we commit, veto, error or time out
+		maid:GiveTask(function()
+			for _, player in ordered do
+				self._lockedPlayers[player] = nil
+			end
+
+			self._playerUnlocked:Fire()
+		end)
+
+		const profileA = self:GetProfile(playerA)
+		const profileB = self:GetProfile(playerB)
+
+		if not (profileA and profileA:IsActive() and profileB and profileB:IsActive()) then
+			maid:DoCleaning()
+			return reject("Both players must have an active profile")
+		end
+
+		-- Snapshots to compare against once the callback is done, so a write that
+		-- lands while it yields cannot be silently overwritten
+		const originalA = TableUtils.deepCopy(profileA.Data)
+		const originalB = TableUtils.deepCopy(profileB.Data)
+
+		-- The callback gets its own thread. Run inline, one that never returns
+		-- would take this thread down with it and strand both locks for good
+		const callbackPromise = maid:GivePromise(Promise.spawn(function(resolveCallback, rejectCallback)
+			const ranCallback, resultA, resultB =
+				pcall(callback, TableUtils.deepCopy(originalA), TableUtils.deepCopy(originalB))
+
+			if not ranCallback then
+				return rejectCallback(resultA)
+			end
+
+			resolveCallback(resultA, resultB)
+		end))
+
+		maid:GiveTask(task.delay(TRANSACTION_TIMEOUT_SECONDS, function()
+			callbackPromise:Reject(`Transaction timed out after {TRANSACTION_TIMEOUT_SECONDS} seconds`)
+		end))
+
+		const success, newDataA, newDataB = callbackPromise:Yield()
+
+		if not success then
+			maid:DoCleaning()
+			return reject(newDataA)
+		end
+
+		if newDataA == nil or newDataB == nil then
+			maid:DoCleaning()
+			return reject("Transaction vetoed by callback")
+		end
+
+		if not (profileA:IsActive() and profileB:IsActive()) then
+			maid:DoCleaning()
+			return reject("A profile ended its session during the transaction")
+		end
+
+		if
+			not TableUtils.deepEquivalent(profileA.Data, originalA)
+			or not TableUtils.deepEquivalent(profileB.Data, originalB)
+		then
+			maid:DoCleaning()
+			return reject("A profile changed during the transaction")
+		end
+
+		-- Commit. Nothing below yields, so no other code observes one profile
+		-- written and the other not
+		const changedA = DataServiceUtils.getChangedRootKeys(originalA, newDataA)
+		const changedB = DataServiceUtils.getChangedRootKeys(originalB, newDataB)
+
+		TableUtils.deepSync(profileA.Data, newDataA)
+		TableUtils.deepSync(profileB.Data, newDataB)
+
+		maid:DoCleaning()
+
+		-- Replicated a whole root key at a time: a dot-separated path cannot say
+		-- "this item left the array", and a trade is mostly removals
+		for _, keyName in changedA do
+			self:ReplicateValue(playerA, keyName, (profileA.Data :: any)[keyName])
+		end
+
+		for _, keyName in changedB do
+			self:ReplicateValue(playerB, keyName, (profileB.Data :: any)[keyName])
+		end
+
+		resolve(newDataA, newDataB)
+	end)
 end
 
 function DataService.Destroy(self: DataService)

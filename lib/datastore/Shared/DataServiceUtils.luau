@@ -176,6 +176,37 @@ function DataServiceUtils.getReplicatedData(data: any, hiddenKeys: { string }): 
 end
 
 --[=[
+    Returns the root keys whose value differs between two profile data tables,
+    removals included.
+
+    Replication is done a whole root key at a time because a dot-separated path
+    cannot express a removal either: the client would never hear that an entry
+    left an array. Sending the root wholesale costs bandwidth but cannot desync.
+
+    @within DataServiceUtils
+    @param oldData table
+    @param newData table
+    @return { string }
+]=]
+function DataServiceUtils.getChangedRootKeys(oldData: any, newData: any): { string }
+	const changed = {}
+
+	for key, newValue in newData do
+		if not TableUtils.deepEquivalent(oldData[key], newValue) then
+			table.insert(changed, key)
+		end
+	end
+
+	for key in oldData do
+		if newData[key] == nil then
+			table.insert(changed, key)
+		end
+	end
+
+	return changed
+end
+
+--[=[
 	Returns changed values as dot-separated paths.
 
 	@param oldData table

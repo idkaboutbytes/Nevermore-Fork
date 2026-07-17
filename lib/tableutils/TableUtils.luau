@@ -232,6 +232,45 @@ function TableUtils.deepOverwrite<K0, K1, V0, V1>(target: Map<K0, V0>, source: M
 end
 
 --[=[
+	Mutates target in place until it deep-equals source, keeping the target's
+	table identity.
+
+	Unlike [TableUtils.deepOverwrite] this also removes keys that source does not
+	have, so the result is source's shape rather than a merge of the two. Reach
+	for this when the source is authoritative and a removal has to stick --
+	overwriting a `{1, 2, 3}` array with `{1, 2}` leaves the 3 behind.
+
+	```lua
+	local target = { Inventory = { 1, 2, 3 } }
+	TableUtils.deepOverwrite(target, { Inventory = { 1, 2 } }) --> { Inventory = { 1, 2, 3 } }
+	TableUtils.deepSync(target, { Inventory = { 1, 2 } })      --> { Inventory = { 1, 2 } }
+	```
+
+	@param target table -- Target table
+	@param source table -- Table to read from
+	@return table -- target
+]=]
+function TableUtils.deepSync<K0, K1, V0, V1>(target: Map<K0, V0>, source: Map<K1, V1>): Map<K1, V1>
+	for index: any, value: any in source do
+		if type(target[index]) == "table" and type(value) == "table" then
+			TableUtils.deepSync(target[index] :: any, value)
+		else
+			target[index] = value
+		end
+	end
+
+	-- Clearing the current key mid-traversal is well defined in Lua; adding one
+	-- would not be, and we never do
+	for index: any in target do
+		if (source :: any)[index] == nil then
+			target[index] = nil
+		end
+	end
+
+	return (target :: any) :: Map<K1, V1>
+end
+
+--[=[
 	Gets an index by value, returning `nil` if no index is found.
 	@param haystack table -- To search in
 	@param needle Value to search for

@@ -9,13 +9,13 @@
 
 const require = require("../Loader").load()
 
-local Math = require('MathUtils')
+local Math = require("MathUtils")
 
 local TransparencyService = {}
-TransparencyService.ServiceName = 'TransparencyService'
-TransparencyService.ServiceRealm = 'Client'
+TransparencyService.ServiceName = "TransparencyService"
+TransparencyService.ServiceRealm = "Client"
 
-export type TransparencyType = 'Transparency' | 'LocalTransparencyModifier'
+export type TransparencyType = "Transparency" | "LocalTransparencyModifier"
 export type TransparencyService = typeof(setmetatable(
 	{} :: {
 		_properties: {
@@ -31,11 +31,11 @@ export type TransparencyService = typeof(setmetatable(
 	Initializes the transparency service
 ]=]
 function TransparencyService.Init(self: TransparencyService)
-	assert(not self._properties, 'Already initialized')
+	assert(not self._properties, "Already initialized")
 
 	self._properties = {
-		Transparency = setmetatable({}, { __mode = 'k' }),
-		LocalTransparencyModifier = setmetatable({}, { __mode = 'k' }),
+		Transparency = setmetatable({}, { __mode = "k" }),
+		LocalTransparencyModifier = setmetatable({}, { __mode = "k" }),
 	}
 end
 
@@ -50,15 +50,10 @@ end
 	@param part Instance
 	@param transparency number
 ]=]
-function TransparencyService.SetTransparency(
-	self: TransparencyService,
-	key: any,
-	part: Instance,
-	transparency: number?
-)
-	assert(self._properties, 'Not initialized')
+function TransparencyService.SetTransparency(self: TransparencyService, key: any, part: Instance, transparency: number?)
+	assert(self._properties, "Not initialized")
 
-	self:_set(key, part, 'Transparency', transparency)
+	self:_set(key, part, "Transparency", transparency)
 end
 
 --[=[
@@ -74,9 +69,9 @@ function TransparencyService.SetLocalTransparencyModifier(
 	part: Instance,
 	transparency: number?
 )
-	assert(self._properties, 'Not initialized')
+	assert(self._properties, "Not initialized")
 
-	self:_set(key, part, 'LocalTransparencyModifier', transparency)
+	self:_set(key, part, "LocalTransparencyModifier", transparency)
 end
 
 function TransparencyService._set(
@@ -86,15 +81,15 @@ function TransparencyService._set(
 	property: TransparencyType,
 	newValue: number?
 )
-	assert(type(key) == 'table', 'Key must be a table')
-	assert(typeof(part) == 'Instance', 'Part must be instance')
-	assert(self._properties, 'Not initialized')
+	assert(type(key) == "table", "Key must be a table")
+	assert(typeof(part) == "Instance", "Part must be instance")
+	assert(self._properties, "Not initialized")
 
 	if newValue == 0 then
 		newValue = nil
 	end
 
-	local storage = self._properties[property] or error('Not a valid property')
+	local storage = self._properties[property] or error("Not a valid property")
 
 	local partData = storage[part]
 	if not partData then
@@ -123,7 +118,7 @@ function TransparencyService._set(
 	if count >= 5 then
 		warn(
 			string.format(
-				'[TransparencyService] - Part %q has %d transparency instances set to it, memory leak possible',
+				"[TransparencyService] - Part %q has %d transparency instances set to it, memory leak possible",
 				part:GetFullName(),
 				count
 			)
@@ -140,22 +135,14 @@ function TransparencyService._set(
 	(part :: any)[property] = Math.map(valueToSet, 0, 1, partData.original, 1)
 end
 
-function TransparencyService.ResetLocalTransparencyModifier(
-	self: TransparencyService,
-	key: any,
-	part: Instance
-)
-	assert(self._properties, 'Not initialized')
+function TransparencyService.ResetLocalTransparencyModifier(self: TransparencyService, key: any, part: Instance)
+	assert(self._properties, "Not initialized")
 
 	self:SetLocalTransparencyModifier(key, part, nil)
 end
 
-function TransparencyService.ResetTransparency(
-	self: TransparencyService,
-	key: any,
-	part: Instance
-): ()
-	assert(self._properties, 'Not initialized')
+function TransparencyService.ResetTransparency(self: TransparencyService, key: any, part: Instance): ()
+	assert(self._properties, "Not initialized")
 
 	self:SetTransparency(key, part, nil)
 end
@@ -164,7 +151,7 @@ end
 	Uninitializes the transparency service, restoring transparency to original values.
 ]=]
 function TransparencyService.Destroy(self: TransparencyService)
-	assert(self._properties, 'Not initialized')
+	assert(self._properties, "Not initialized")
 
 	for propertyName, storage in self._properties do
 		for part, data in storage do

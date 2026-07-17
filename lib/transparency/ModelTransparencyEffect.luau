@@ -20,17 +20,17 @@
 
 const require = require("../Loader").load()
 
-local BaseObject = require('BaseObject')
-local ServiceBag = require('ServiceBag')
-local Spring = require('Spring')
-local StepUtils = require('StepUtils')
-local TransparencyService = require('TransparencyService')
+local BaseObject = require("BaseObject")
+local ServiceBag = require("ServiceBag")
+local Spring = require("Spring")
+local StepUtils = require("StepUtils")
+local TransparencyService = require("TransparencyService")
 
 local ModelTransparencyEffect = setmetatable({}, BaseObject)
-ModelTransparencyEffect.ClassName = 'ModelTransparencyEffect'
+ModelTransparencyEffect.ClassName = "ModelTransparencyEffect"
 ModelTransparencyEffect.__index = ModelTransparencyEffect
 
-export type TransparencyMode = 'SetTransparency' | 'SetLocalTransparencyModifier'
+export type TransparencyMode = "SetTransparency" | "SetLocalTransparencyModifier"
 
 export type ModelTransparencyEffect =
 	typeof(setmetatable(
@@ -62,16 +62,16 @@ function ModelTransparencyEffect.new(
 	disableVisualEffects: boolean?
 ): ModelTransparencyEffect
 	local self: ModelTransparencyEffect = setmetatable(BaseObject.new(adornee) :: any, ModelTransparencyEffect)
-	self._serviceBag = assert(serviceBag, 'No serviceBag')
+	self._serviceBag = assert(serviceBag, "No serviceBag")
 
 	assert(
-		type(transparencyServiceMethodName) == 'string' or transparencyServiceMethodName == nil,
-		'Bad transparencyServiceMethodName'
+		type(transparencyServiceMethodName) == "string" or transparencyServiceMethodName == nil,
+		"Bad transparencyServiceMethodName"
 	)
 
-	self._transparencyService = self._serviceBag:GetService(TransparencyService :: any)
+	self._transparencyService = self._serviceBag:GetService(TransparencyService)
 	self._transparency = Spring.new(0) -- Start at 0 transparency
-	self._transparencyServiceMethodName = transparencyServiceMethodName or 'SetTransparency'
+	self._transparencyServiceMethodName = transparencyServiceMethodName or "SetTransparency"
 	self._disableVisualEffects = disableVisualEffects == true
 
 	self._startAnimation, self._maid._stop = StepUtils.bindToRenderStep(self._update)
@@ -214,14 +214,14 @@ function ModelTransparencyEffect._updateVisualEffects(self: ModelTransparencyEff
 
 		-- Use ClassName for faster type checking than IsA
 		if
-			effectType == 'ParticleEmitter'
-			or effectType == 'Fire'
-			or effectType == 'Smoke'
-			or effectType == 'Sparkles'
-			or effectType == 'Trail'
+			effectType == "ParticleEmitter"
+			or effectType == "Fire"
+			or effectType == "Smoke"
+			or effectType == "Sparkles"
+			or effectType == "Trail"
 		then
 			effect.Enabled = shouldDisable and false or originalState.enabled
-		elseif effectType == 'Light' or effectType == 'Beam' then
+		elseif effectType == "Light" or effectType == "Beam" then
 			effect.Enabled = shouldDisable and false or originalState.enabled
 			if originalState.brightness and not shouldDisable then
 				effect.Brightness = originalState.brightness * brightnessMultiplier
@@ -257,22 +257,22 @@ function ModelTransparencyEffect._getVisualEffectsSet(self: ModelTransparencyEff
 end
 
 function ModelTransparencyEffect._setupParts(self: ModelTransparencyEffect)
-	assert(not (self :: any)._parts, 'Already initialized')
+	assert(not (self :: any)._parts, "Already initialized")
 
 	self._parts = {}
 
-	if self._obj:IsA('BasePart') or self._obj:IsA('Decal') then
+	if self._obj:IsA("BasePart") or self._obj:IsA("Decal") then
 		self._parts[self._obj] = true
 	end
 
 	for _, part in self._obj:GetDescendants() do
-		if part:IsA('BasePart') or part:IsA('Decal') then
+		if part:IsA("BasePart") or part:IsA("Decal") then
 			self._parts[part] = true
 		end
 	end
 
 	self._maid:GiveTask(self._obj.DescendantAdded:Connect(function(child)
-		if child:IsA('BasePart') or child:IsA('Decal') then
+		if child:IsA("BasePart") or child:IsA("Decal") then
 			self._parts[child] = true
 			self:_startAnimation()
 		end
@@ -305,7 +305,7 @@ function ModelTransparencyEffect._setupVisualEffects(self: ModelTransparencyEffe
 		return
 	end
 
-	assert(not self._visualEffects, 'Visual effects already initialized')
+	assert(not self._visualEffects, "Visual effects already initialized")
 
 	self._visualEffects = {}
 
@@ -314,7 +314,7 @@ function ModelTransparencyEffect._setupVisualEffects(self: ModelTransparencyEffe
 		local state = { enabled = effect.Enabled }
 
 		-- Store brightness for lights and beams
-		if effect:IsA('Light') or effect:IsA('Beam') then
+		if effect:IsA("Light") or effect:IsA("Beam") then
 			state.brightness = effect.Brightness
 		end
 
@@ -347,16 +347,16 @@ function ModelTransparencyEffect._setupVisualEffects(self: ModelTransparencyEffe
 			-- Restore original state before removal
 			local originalState = self._visualEffects[child]
 			if
-				child:IsA('ParticleEmitter')
-				or child:IsA('Light')
-				or child:IsA('Beam')
-				or child:IsA('Fire')
-				or child:IsA('Smoke')
-				or child:IsA('Sparkles')
-				or child:IsA('Trail')
+				child:IsA("ParticleEmitter")
+				or child:IsA("Light")
+				or child:IsA("Beam")
+				or child:IsA("Fire")
+				or child:IsA("Smoke")
+				or child:IsA("Sparkles")
+				or child:IsA("Trail")
 			then
 				child.Enabled = originalState.enabled
-				if originalState.brightness and (child:IsA('Light') or child:IsA('Beam')) then
+				if originalState.brightness and (child:IsA("Light") or child:IsA("Beam")) then
 					child.Brightness = originalState.brightness
 				end
 			end
@@ -369,7 +369,7 @@ function ModelTransparencyEffect._setupVisualEffects(self: ModelTransparencyEffe
 		for effect, originalState in self._visualEffects do
 			if effect.Parent then
 				effect.Enabled = originalState.enabled
-				if originalState.brightness and (effect:IsA('Light') or effect:IsA('Beam')) then
+				if originalState.brightness and (effect:IsA("Light") or effect:IsA("Beam")) then
 					effect.Brightness = originalState.brightness
 				end
 			end
@@ -379,13 +379,13 @@ end
 
 function ModelTransparencyEffect._isVisualEffect(self: ModelTransparencyEffect, instance: Instance): boolean
 	local className = instance.ClassName
-	return className == 'ParticleEmitter'
-		or className == 'Light'
-		or className == 'Beam'
-		or className == 'Fire'
-		or className == 'Smoke'
-		or className == 'Sparkles'
-		or className == 'Trail'
+	return className == "ParticleEmitter"
+		or className == "Light"
+		or className == "Beam"
+		or className == "Fire"
+		or className == "Smoke"
+		or className == "Sparkles"
+		or className == "Trail"
 end
 
 return ModelTransparencyEffect

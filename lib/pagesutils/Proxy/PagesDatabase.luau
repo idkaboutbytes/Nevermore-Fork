@@ -3,7 +3,7 @@
 	@class PagesDatabase
 ]=]
 
-const require = require("../Loader").load()
+const require = require("../../Loader").load()
 
 local DuckTypeUtils = require('DuckTypeUtils')
 

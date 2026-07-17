@@ -53,25 +53,27 @@ ServiceBag.__index = ServiceBag
 
 local SHOULD_PRINT = RunService:IsStudio()
 
-export type ServiceBag = typeof(setmetatable(
-	{} :: {
-		_services: { [any]: any },
-		_parentProvider: ServiceBag?,
-		_serviceTypesToInitializeSet: { [any]: true }?,
-		_initializedServiceTypeSet: { [any]: true },
-		_serviceTypesToStartSet: { [any]: true }?,
+export type ServiceBag =
+	typeof(setmetatable(
+		{} :: {
+			_services: { [any]: any },
+			_parentProvider: ServiceBag?,
+			_serviceTypesToInitializeSet: { [any]: true }?,
+			_initializedServiceTypeSet: { [any]: true },
+			_serviceTypesToStartSet: { [any]: true }?,
 
-		_initRunAllowed: boolean,
-		_destructing: boolean,
-		_loadedComponentCount: number,
-		_serviceInitLogger: ServiceInitLogger.ServiceInitLogger,
-		_serviceStartLogger: ServiceInitLogger.ServiceInitLogger,
-		_serviceInitTiming: { [any]: ServiceInitLogger.TimingInfo },
+			_initRunAllowed: boolean,
+			_destructing: boolean,
+			_loadedComponentCount: number,
+			_serviceInitLogger: ServiceInitLogger.ServiceInitLogger,
+			_serviceStartLogger: ServiceInitLogger.ServiceInitLogger,
+			_serviceInitTiming: { [any]: ServiceInitLogger.TimingInfo },
 
-		_destroyingSignal: Signal.Signal<()>,
-	},
-	{} :: typeof({ __index = ServiceBag })
-)) & BaseObject.BaseObject<any>
+			_destroyingSignal: Signal.Signal<()>,
+		},
+		{} :: typeof({ __index = ServiceBag })
+	))
+	& BaseObject.BaseObject<any>
 
 --[=[
 	Constructs a new ServiceBag
@@ -125,10 +127,30 @@ end
 	Retrieves the service, ensuring initialization if we are in
 	the initialization phase.
 
+	The return is inferred from what you assign it to, so annotate the
+	destination with the service's own exported type:
+
+	```lua
+	export type MyThing = typeof(setmetatable(
+		{} :: {
+			_dataService: DataService.DataService,
+		},
+		{} :: typeof({ __index = MyThing })
+	))
+
+	self._dataService = self._serviceBag:GetService(DataService)
+	```
+
+	`serviceType` is deliberately loose. What comes back is not the module you
+	pass in -- it is a fresh service built with that module as its `__index`, as
+	the module's exported type describes. Tying the return to the argument's type
+	instead would hand back the module's own type, which is a different type that
+	happens to share its name, hence errors reading `Expected 'X' but got 'X'`.
+
 	@param serviceType ServiceType
-	@return any
+	@return Service
 ]=]
-function ServiceBag.GetService<T>(self: ServiceBag, serviceType: T): T
+function ServiceBag.GetService<T>(self: ServiceBag, serviceType: any): T
 	if typeof(serviceType) == "Instance" then
 		serviceType = (require :: any)(serviceType)
 	end
@@ -164,7 +186,7 @@ end
 	@param serviceType ServiceType
 	@return boolean
 ]=]
-function ServiceBag.HasService<T>(self: ServiceBag, serviceType: T): boolean
+function ServiceBag.HasService(self: ServiceBag, serviceType: any): boolean
 	if typeof(serviceType) == "Instance" then
 		serviceType = (require :: any)(serviceType)
 	end
@@ -287,7 +309,7 @@ function ServiceBag._addServiceType<T>(self: ServiceBag, serviceType: T)
 
 	if self:IsStarted() then
 		local hint =
-			'HINT: Be sure to call serviceBag:GetService(require("MyService")) either before calling serviceBag:Init() or during serviceBag:Init() (within another service:Init)'
+			"HINT: Be sure to call serviceBag:GetService(require(\"MyService\")) either before calling serviceBag:Init() or during serviceBag:Init() (within another service:Init)"
 		error(string.format("Already started, cannot add %q. \n%s", self:_getServiceName(serviceType), hint))
 		return
 	end
