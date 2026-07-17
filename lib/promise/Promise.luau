@@ -11,8 +11,8 @@ const HttpService = game:GetService("HttpService")
 
 -- Turns out debug.traceback() is slow
 const ENABLE_TRACEBACK = false
-const _emptyRejectedPromise = nil
-const _emptyFulfilledPromise = nil
+local _emptyRejectedPromise: any = nil
+local _emptyFulfilledPromise: any = nil
 const EMPTY_PACKED_TUPLE = table.freeze({ n = 0 })
 
 const Promise = {}
