@@ -21,7 +21,7 @@ const t = require("t")
 const Promise = require("Promise")
 const Squash = require("Squash")
 const TableUtils = require("TableUtils")
-const ProfileData = require("ProfileData")
+const DataServiceProfile = require("DataServiceProfile")
 const DataServiceNetwork = require("DataServiceNetwork")
 const DataServiceUtils = require("DataServiceUtils")
 
@@ -42,6 +42,7 @@ export type DataServiceClient = typeof(setmetatable(
 		_dataPromise: Promise.Promise<any>,
 		_hasLoadedProfile: boolean,
 		_pendingValueChanges: { PendingValueChange },
+		_profileData: DataServiceProfile.ProfileDefinition,
 	},
 	{} :: typeof({ __index = DataServiceClient })
 ))
@@ -55,6 +56,7 @@ function DataServiceClient.Init(self: DataServiceClient, serviceBag: ServiceBag.
 	self._dataPromise = self._maid:GivePromise(Promise.new())
 	self._hasLoadedProfile = false
 	self._pendingValueChanges = {}
+	self._profileData = DataServiceProfile.Lock()
 end
 
 function DataServiceClient.Start(self: DataServiceClient)
@@ -64,7 +66,7 @@ function DataServiceClient.Start(self: DataServiceClient)
 
 	DataServiceNetwork.packets.profileLoaded.listen(function(value: { data: buffer, hiddenKeys: { string } })
 		const cursor = Squash.frombuffer(value.data)
-		const success, profile = pcall(ProfileData.Schema.des, cursor)
+		const success, profile = pcall(self._profileData.Schema.des, cursor)
 
 		if not success then
 			warn(`[DataServiceClient] - Failed to deserialize profile ({profile})`)

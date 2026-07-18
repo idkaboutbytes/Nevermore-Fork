@@ -7,7 +7,7 @@
 
 const require = require("../../Loader").load()
 
-const ProfileData = require("ProfileData")
+const SlotsProfileData = require("SlotsProfileData")
 const SaveSlotTypes = require("SaveSlotTypes")
 const SaveSlotUtils = require("SaveSlotUtils")
 const Squash = require("Squash")
@@ -53,12 +53,12 @@ local function getActiveSlotDataSchema()
 		return activeSlotDataSchema
 	end
 
-	const slotDataSchema = (ProfileData :: any).SlotDataSchema
+	const slotDataSchema = (SlotsProfileData :: any).SlotDataSchema
 	assert(
 		type(slotDataSchema) == "table"
 			and type(slotDataSchema.ser) == "function"
 			and type(slotDataSchema.des) == "function",
-		"ProfileData must export SlotDataSchema for SaveSlot active-data replication"
+		"SlotsProfileData must export SlotDataSchema for SaveSlot active-data replication"
 	)
 	activeSlotDataSchema = Squash.record({
 		Sequence = Squash.u32(),
@@ -176,7 +176,7 @@ end
 
 --[=[
 	Serializes one snapshot of the active slot using the consuming game's exported
-	`ProfileData.SlotDataSchema`.
+	`SlotsProfileData.SlotDataSchema`.
 
 	@within SaveSlotSerializationUtils
 	@param sequence number

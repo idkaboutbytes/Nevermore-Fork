@@ -9,23 +9,15 @@ const StringUtils = require("StringUtils")
 const TableUtils = require("TableUtils")
 const ObservableMap = require("ObservableMap")
 const DefaultValueUtils = require("DefaultValueUtils")
-const ProfileData = require("ProfileData")
+const DataServiceProfile = require("DataServiceProfile")
 
 const SETTINGS_KEY = "Settings"
 
 const DataServiceUtils = {}
 
-const SETTINGS_TEMPLATE: { [string]: any } = {}
-do
-	-- rawget, because a game whose profile has no Settings key at all would
-	-- otherwise throw here at require time
-	const settings = rawget(ProfileData.Template :: any, SETTINGS_KEY)
-
-	if type(settings) == "table" then
-		for name, default in settings do
-			SETTINGS_TEMPLATE[name] = default
-		end
-	end
+local function getSettingsTemplate(): { [string]: any }
+	const settings = rawget(DataServiceProfile.Get().Template :: any, SETTINGS_KEY)
+	return if type(settings) == "table" then settings else {}
 end
 
 --[=[
@@ -210,7 +202,7 @@ end
 function DataServiceUtils.getSettingNames(): { string }
 	const names = {}
 
-	for name in SETTINGS_TEMPLATE do
+	for name in getSettingsTemplate() do
 		table.insert(names, name)
 	end
 
@@ -231,7 +223,7 @@ function DataServiceUtils.isSettingName(name: string): boolean
 		return false
 	end
 
-	return SETTINGS_TEMPLATE[name] ~= nil
+	return getSettingsTemplate()[name] ~= nil
 end
 
 --[=[
@@ -256,7 +248,7 @@ function DataServiceUtils.isWritableSettingName(name: string): boolean
 	-- type rather than typeof throughout: writable settings are primitives, which
 	-- the two agree on, and a Roblox datatype reads as "userdata" here, so it
 	-- fails the whitelist rather than being mistaken for a primitive
-	const defaultType = type(SETTINGS_TEMPLATE[name])
+	const defaultType = type(getSettingsTemplate()[name])
 
 	return defaultType == "boolean" or defaultType == "string" or defaultType == "number"
 end
@@ -276,7 +268,7 @@ function DataServiceUtils.isValidSettingValue(name: string, value: any): boolean
 	end
 
 	const valueType = type(value)
-	if valueType ~= type(SETTINGS_TEMPLATE[name]) then
+	if valueType ~= type(getSettingsTemplate()[name]) then
 		return false
 	end
 

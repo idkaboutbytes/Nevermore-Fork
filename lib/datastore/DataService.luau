@@ -27,7 +27,7 @@ const CmdrService = require("CmdrService")
 const Squash = require("Squash")
 const TableUtils = require("TableUtils")
 const AttributeUtils = require("AttributeUtils")
-const ProfileData = require("ProfileData")
+const DataServiceProfile = require("DataServiceProfile")
 const DataServiceNetwork = require("DataServiceNetwork")
 const DataServiceUtils = require("DataServiceUtils")
 
@@ -59,6 +59,7 @@ export type DataService = typeof(setmetatable(
 
 		_lockedPlayers: { [Player]: true },
 		_playerUnlocked: Signal.Signal<>,
+		_profileData: DataServiceProfile.ProfileDefinition,
 
 		DataStore: ProfileStore.ProfileStore<any>,
 	},
@@ -79,8 +80,9 @@ function DataService.Init(self: DataService, serviceBag: ServiceBag.ServiceBag)
 
 	self._lockedPlayers = setmetatable({}, { __mode = "k" }) :: any
 	self._playerUnlocked = self._maid:Add(Signal.new())
+	self._profileData = DataServiceProfile.Lock()
 
-	self.DataStore = ProfileStore.New(self:GetStoreNameAndVersion(), TableUtils.deepCopy(ProfileData.Template))
+	self.DataStore = ProfileStore.New(self:GetStoreNameAndVersion(), TableUtils.deepCopy(self._profileData.Template))
 end
 
 function DataService.Start(self: DataService)
@@ -183,17 +185,17 @@ function DataService.Start(self: DataService)
 			end
 
 			const cursor = Squash.cursor()
-			const isValid, validationError = pcall(ProfileData.Schema.ser, cursor, candidateData)
+			const isValid, validationError = pcall(self._profileData.Schema.ser, cursor, candidateData)
 			if not isValid then
-				error(`New value does not match ProfileData.Schema: {validationError}`)
+				error(`New value does not match {DataServiceProfile.GetName()}.Schema: {validationError}`)
 			end
 			const validationCursor = Squash.frombuffer(Squash.tobuffer(cursor))
-			const decoded, schemaDataOrError = pcall(ProfileData.Schema.des, validationCursor)
+			const decoded, schemaDataOrError = pcall(self._profileData.Schema.des, validationCursor)
 			if not decoded then
-				error(`ProfileData.Schema could not read the validated value: {schemaDataOrError}`)
+				error(`{DataServiceProfile.GetName()}.Schema could not read the validated value: {schemaDataOrError}`)
 			end
 			if DataServiceUtils.readValuePath(schemaDataOrError, path) == nil then
-				error(`Data path {path} is not represented by ProfileData.Schema`)
+				error(`Data path {path} is not represented by {DataServiceProfile.GetName()}.Schema`)
 			end
 
 			const resolvedValue = DataServiceUtils.readValuePath(candidateData, path)
@@ -241,7 +243,7 @@ function DataService.Start(self: DataService)
 				const hiddenKeys = self._hiddenKeys:GetList()
 
 				const cursor = Squash.cursor()
-				ProfileData.Schema.ser(cursor, DataServiceUtils.getReplicatedData(profile.Data, hiddenKeys))
+				self._profileData.Schema.ser(cursor, DataServiceUtils.getReplicatedData(profile.Data, hiddenKeys))
 				DataServiceNetwork.packets.profileLoaded.sendTo({
 					data = Squash.tobuffer(cursor),
 					hiddenKeys = hiddenKeys,
@@ -292,8 +294,12 @@ end
 	@within DataService
 	@returns string, string
 ]=]
-function DataService.GetStoreNameAndVersion(_self: DataService)
-	return `{PROFILE_NAME}_{PROFILE_VERSION}`
+function DataService.GetStoreNameAndVersion(self: DataService)
+	const storeName = self._profileData.StoreName or PROFILE_NAME
+	const storeVersion = self._profileData.StoreVersion or PROFILE_VERSION
+	assert(type(storeName) == "string" and storeName ~= "", "Bad profile StoreName")
+	assert(type(storeVersion) == "number" and storeVersion >= 1 and storeVersion % 1 == 0, "Bad profile StoreVersion")
+	return `{storeName}_{storeVersion}`
 end
 
 --[=[

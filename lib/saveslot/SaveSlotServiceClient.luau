@@ -9,6 +9,7 @@
 const require = require("../Loader").load()
 
 const DataServiceClient = require("DataServiceClient")
+const DataServiceProfile = require("DataServiceProfile")
 const DataServiceUtils = require("DataServiceUtils")
 const Maid = require("Maid")
 const Observable = require("Observable")
@@ -23,6 +24,7 @@ const SaveSlotUtils = require("SaveSlotUtils")
 const ServiceBag = require("ServiceBag")
 const Signal = require("Signal")
 const TableUtils = require("TableUtils")
+const SlotsProfileData = require("SlotsProfileData")
 
 const SaveSlotServiceClient = {}
 SaveSlotServiceClient.ServiceName = "SaveSlotServiceClient"
@@ -69,6 +71,7 @@ function SaveSlotServiceClient.Init(self: SaveSlotServiceClient, serviceBag: Ser
 	assert(not (self :: any)._serviceBag, "Already initialized")
 	self._serviceBag = assert(serviceBag, "No serviceBag")
 	self._maid = Maid.new()
+	DataServiceProfile.Select(SlotsProfileData, "SlotsProfileData")
 	self._dataServiceClient = self._serviceBag:GetService(DataServiceClient)
 	self._slotStateChanged = self._maid:Add(Signal.new())
 	self._activeSlotDataChanged = self._maid:Add(Signal.new())
@@ -134,7 +137,7 @@ end
 
 --[=[
 	Requests and caches only the currently active slot's gameplay data. The payload
-	is serialized with `ProfileData.SlotDataSchema`; inactive slots are never sent.
+	is serialized with `SlotsProfileData.SlotDataSchema`; inactive slots are never sent.
 
 	@within SaveSlotServiceClient
 	@return Promise<any>

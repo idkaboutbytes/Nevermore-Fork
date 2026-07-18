@@ -15,6 +15,7 @@ const require = require("../Loader").load()
 
 const CmdrService = require("CmdrService")
 const DataService = require("DataService")
+const DataServiceProfile = require("DataServiceProfile")
 const DataServiceUtils = require("DataServiceUtils")
 const Maid = require("Maid")
 const Observable = require("Observable")
@@ -29,6 +30,7 @@ const SaveSlotUtils = require("SaveSlotUtils")
 const ServiceBag = require("ServiceBag")
 const TableUtils = require("TableUtils")
 const t = require("t")
+const SlotsProfileData = require("SlotsProfileData")
 
 const MAX_SLOT_NAME_LENGTH = 128
 const MAX_SUMMARY_LENGTH = 512
@@ -81,6 +83,7 @@ function SaveSlotService.Init(self: SaveSlotService, serviceBag: ServiceBag.Serv
 	assert(not (self :: any)._serviceBag, "Already initialized")
 	self._serviceBag = assert(serviceBag, "No serviceBag")
 	self._maid = Maid.new()
+	DataServiceProfile.Select(SlotsProfileData, "SlotsProfileData")
 	self._dataService = self._serviceBag:GetService(DataService)
 	self._cmdrService = self._serviceBag:GetService(CmdrService)
 	self._readyPromises = setmetatable({}, { __mode = "k" }) :: any
