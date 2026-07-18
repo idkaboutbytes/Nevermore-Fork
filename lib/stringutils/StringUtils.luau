@@ -212,18 +212,15 @@ function StringUtils.addCommas(number: string | number, seperator: string): stri
 end
 
 --[=[
-	Splits a string by a separator
+	Splits a string by a literal separator. Pattern characters such as `.`, `%`,
+	`+`, and `-` have no special meaning.
 
 	@param str string
 	@param separator string
 	@return {string}
 ]=]
 function StringUtils.split(str: string, separator: string): { string }
-	local result = {}
-	for match in (str .. separator):gmatch('(.-)' .. separator) do
-		table.insert(result, match)
-	end
-	return result
+	return string.split(str, separator)
 end
 
 function StringUtils.formatCountdown(seconds: number, whenAtZeroText: string?): string

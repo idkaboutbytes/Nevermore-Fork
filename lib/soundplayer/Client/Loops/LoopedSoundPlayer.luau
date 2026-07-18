@@ -37,8 +37,8 @@ type TimePositionData = {
 export type LoopedSoundPlayer =
 	typeof(setmetatable(
 		{} :: {
-			_currentSoundLooped: Signal.Signal<()>,
-			_currentSoundLoopedAfterDelay: Signal.Signal<()>,
+			_currentSoundLooped: Signal.Signal<(Sound)>,
+			_currentSoundLoopedAfterDelay: Signal.Signal<(Sound)>,
 			_bpm: ValueObject.ValueObject<number?>,
 			_soundParent: ValueObject.ValueObject<Instance?>,
 			_soundGroup: ValueObject.ValueObject<SoundGroup?>,
@@ -246,7 +246,7 @@ function LoopedSoundPlayer._renderSoundPlayer(self: LoopedSoundPlayer, soundId: 
 
 						if self.Destroy then
 							if self._currentActiveSound.Value == soundPlayer.Sound then
-								self._currentSoundLooped:Fire()
+								self._currentSoundLooped:Fire(soundPlayer.Sound)
 							end
 						end
 					end
@@ -270,7 +270,9 @@ function LoopedSoundPlayer._renderSoundPlayer(self: LoopedSoundPlayer, soundId: 
 	end))
 
 	maid:GiveTask(soundPlayer.Sound.DidLoop:Connect(function()
-		self._currentSoundLooped:Fire()
+		if self._currentActiveSound.Value == soundPlayer.Sound then
+			self._currentSoundLooped:Fire(soundPlayer.Sound)
+		end
 	end))
 
 	self._currentActiveSound.Value = soundPlayer.Sound
@@ -314,30 +316,44 @@ function LoopedSoundPlayer._setupLoopScheduling(
 
 	if loopSchedule.maxLoops then
 		local loopCount = 0
-		maid:GiveTask(self._currentSoundLooped:Connect(function()
+		maid:GiveTask(self._currentSoundLooped:Connect(function(loopedSound)
+			if loopedSound ~= soundPlayer.Sound then
+				return
+			end
+
 			loopCount = loopCount + 1
 
 			-- Cancel
-			if loopCount > loopSchedule.maxLoops then
+			if loopCount >= loopSchedule.maxLoops then
 				self._currentSoundId.Value = nil
 			end
 		end))
 	end
 
 	if loopSchedule.loopDelay then
-		maid:GiveTask(self._currentSoundLooped:Connect(function()
+		maid:GiveTask(self._currentSoundLooped:Connect(function(loopedSound)
+			if loopedSound ~= soundPlayer.Sound or self._currentActiveSound.Value ~= soundPlayer.Sound then
+				return
+			end
+
 			local waitTime = SoundLoopScheduleUtils.getWaitTimeSeconds(loopSchedule.loopDelay)
 
 			soundPlayer.Sound:Pause()
 
 			maid._scheduled = task.delay(waitTime, function()
-				self._currentSoundLoopedAfterDelay:Fire()
+				if not self.Destroy or self._currentActiveSound.Value ~= soundPlayer.Sound then
+					return
+				end
+
 				soundPlayer.Sound:Play()
+				self._currentSoundLoopedAfterDelay:Fire(soundPlayer.Sound)
 			end)
 		end))
 	else
-		maid:GiveTask(self._currentSoundLooped:Connect(function()
-			self._currentSoundLoopedAfterDelay:Fire()
+		maid:GiveTask(self._currentSoundLooped:Connect(function(loopedSound)
+			if loopedSound == soundPlayer.Sound and self._currentActiveSound.Value == soundPlayer.Sound then
+				self._currentSoundLoopedAfterDelay:Fire(soundPlayer.Sound)
+			end
 		end))
 	end
 
@@ -350,6 +366,10 @@ function LoopedSoundPlayer.SwapToSamples(
 	loopSchedule: SoundLoopScheduleUtils.SoundLoopSchedule?
 ): ()
 	assert(type(soundIdList) == "table", "Bad soundIdList")
+	assert(#soundIdList > 0, "soundIdList must not be empty")
+	for _, soundId in soundIdList do
+		assert(SoundUtils.isConvertableToRbxAsset(soundId), "Bad soundIdList entry")
+	end
 	loopSchedule = self:_convertToLoopedSchedule(loopSchedule)
 	assert(loopSchedule ~= nil, "Bad loopSchedule")
 
@@ -360,8 +380,10 @@ function LoopedSoundPlayer.SwapToSamples(
 		self._currentLoopSchedule.Value = loopSchedule
 		self._currentSoundId.Value = sampler:Sample()
 
-		loopMaid:GiveTask(self._currentSoundLoopedAfterDelay:Connect(function()
-			self._currentSoundId.Value = sampler:Sample()
+		loopMaid:GiveTask(self._currentSoundLoopedAfterDelay:Connect(function(loopedSound)
+			if self._currentActiveSound.Value == loopedSound then
+				self._currentSoundId.Value = sampler:Sample()
+			end
 		end))
 	end))
 
@@ -377,6 +399,10 @@ function LoopedSoundPlayer.SwapToChoice(
 	loopSchedule: SoundLoopScheduleUtils.SoundLoopSchedule?
 ): ()
 	assert(type(soundIdList) == "table", "Bad soundIdList")
+	assert(#soundIdList > 0, "soundIdList must not be empty")
+	for _, soundId in soundIdList do
+		assert(SoundUtils.isConvertableToRbxAsset(soundId), "Bad soundIdList entry")
+	end
 	loopSchedule = self:_convertToLoopedSchedule(loopSchedule)
 	assert(loopSchedule ~= nil, "Bad loopSchedule")
 
@@ -386,8 +412,10 @@ function LoopedSoundPlayer.SwapToChoice(
 		self._currentLoopSchedule.Value = loopSchedule
 		self._currentSoundId.Value = RandomUtils.choice(soundIdList)
 
-		loopMaid:GiveTask(self._currentSoundLoopedAfterDelay:Connect(function()
-			self._currentSoundId.Value = RandomUtils.choice(soundIdList)
+		loopMaid:GiveTask(self._currentSoundLoopedAfterDelay:Connect(function(loopedSound)
+			if self._currentActiveSound.Value == loopedSound then
+				self._currentSoundId.Value = RandomUtils.choice(soundIdList)
+			end
 		end))
 	end))
 
