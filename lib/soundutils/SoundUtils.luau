@@ -14,13 +14,15 @@ local SoundService = game:GetService("SoundService")
 const require = require("../Loader").load()
 
 local InstanceTreeUtils = require("InstanceTreeUtils")
-local Maid = require("Maid")
-local Promise = require("Promise")
 local RbxAssetUtils = require("RbxAssetUtils")
+local SoundPromiseUtils = require("SoundPromiseUtils")
 
 export type SoundOptions = {
 	SoundId: number | string,
+	[string]: any,
 }
+
+export type SoundId = RbxAssetUtils.RbxAssetIdConvertable | SoundOptions | Sound
 
 local SoundUtils = {}
 SoundUtils.soundService = SoundService
@@ -30,27 +32,7 @@ SoundUtils._propertyTemplates = {}
 	Promises that the sound is loaded.
 ]=]
 function SoundUtils.promiseLoaded(sound: Sound)
-	if sound.IsLoaded then
-		return Promise.resolved()
-	end
-
-	return Promise.new(function(resolve)
-		local maid = Maid.new()
-
-		maid:GiveTask(sound:GetPropertyChangedSignal("IsLoaded"):Connect(function()
-			if sound.IsLoaded then
-				maid:DoCleaning()
-				resolve()
-			end
-		end))
-
-		maid:GiveTask(sound.Loaded:Connect(function()
-			if sound.IsLoaded then
-				maid:DoCleaning()
-				resolve()
-			end
-		end))
-	end)
+	return SoundPromiseUtils.promiseLoaded(sound)
 end
 
 --[=[
@@ -66,7 +48,7 @@ end
 
 	@return Sound
 ]=]
-function SoundUtils.playFromId(id: string | number | SoundOptions): Sound
+function SoundUtils.playFromId(id: SoundId): Sound
 	local sound = SoundUtils.createSoundFromId(id)
 
 	if RunService:IsClient() then
@@ -81,9 +63,43 @@ function SoundUtils.playFromId(id: string | number | SoundOptions): Sound
 end
 
 --[=[
+	Creates a sound template from `baseId`, then applies the asset and properties
+	from `overwriteId`.
+
+	@within SoundUtils
+	@param baseId SoundId
+	@param overwriteId SoundId
+	@return Sound
+]=]
+function SoundUtils.cloneMerge(baseId: SoundId, overwriteId: SoundId): Sound
+	assert(SoundUtils.isConvertableToRbxAsset(baseId), "Bad baseId")
+	assert(SoundUtils.isConvertableToRbxAsset(overwriteId), "Bad overwriteId")
+
+	local soundId = assert(SoundUtils.toRbxAssetId(overwriteId), "Unable to convert overwriteId")
+	local sound = SoundUtils.createSoundFromId(baseId)
+	sound.SoundId = soundId
+	SoundUtils.applyPropertiesFromId(sound, overwriteId)
+
+	return sound
+end
+
+--[=[
 	Creates a new sound object from the given id
 ]=]
-function SoundUtils.createSoundFromId(id: string | number | SoundOptions): Sound
+function SoundUtils.createSoundFromId(id: SoundId): Sound
+	if typeof(id) == "Instance" and id:IsA("Sound") then
+		local copy = Instance.fromExisting(id)
+		copy.Archivable = false
+
+		for _, child in id:GetChildren() do
+			if child:IsA("SoundEffect") then
+				Instance.fromExisting(child).Parent = copy
+			end
+		end
+
+		return copy
+	end
+
 	local soundId = SoundUtils.toRbxAssetId(id)
 	assert(type(soundId) == "string", "Bad id")
 
@@ -95,7 +111,7 @@ function SoundUtils.createSoundFromId(id: string | number | SoundOptions): Sound
 	return sound
 end
 
-function SoundUtils.applyPropertiesFromId(sound: Sound, id: string | number | SoundOptions): ()
+function SoundUtils.applyPropertiesFromId(sound: Sound, id: SoundId): ()
 	local soundId = assert(SoundUtils.toRbxAssetId(id), "Unable to convert id to rbxassetid")
 
 	sound.Name = string.format("Sound_%s", soundId)
@@ -127,13 +143,15 @@ function SoundUtils.applyPropertiesFromId(sound: Sound, id: string | number | So
 		if properties.Parent then
 			sound.Parent = properties.Parent
 		end
+	elseif typeof(id) == "Instance" and id:IsA("Sound") then
+		sound.Volume = id.Volume
 	end
 end
 
 --[=[
 	Plays back a template given asset id in the parent
 ]=]
-function SoundUtils.playFromIdInParent(id: string | number | SoundOptions, parent: Instance): Sound
+function SoundUtils.playFromIdInParent(id: SoundId, parent: Instance): Sound
 	assert(typeof(parent) == "Instance", "Bad parent")
 
 	local sound = SoundUtils.createSoundFromId(id)
@@ -174,7 +192,7 @@ end
 --[=[
 	Plays a sound at a specific CFrame position
 ]=]
-function SoundUtils.playAtCFrame(id: string | number | SoundOptions, cframe: CFrame): Sound
+function SoundUtils.playAtCFrame(id: SoundId, cframe: CFrame): Sound
 	local part = Instance.new("Part")
 	part.Anchored = true
 	part.CanCollide = false
@@ -195,7 +213,7 @@ end
 --[=[
 	Plays a sound at a specific position
 ]=]
-function SoundUtils.playAtPosition(id: string | number | SoundOptions, position: Vector3): Sound
+function SoundUtils.playAtPosition(id: SoundId, position: Vector3): Sound
 	return SoundUtils.playAtCFrame(id, CFrame.new(position))
 end
 
@@ -275,16 +293,20 @@ end
 	@return string?
 	@within SoundUtils
 ]=]
-function SoundUtils.toRbxAssetId(soundId: string | number | SoundOptions): string?
-	if type(soundId) == "table" then
+function SoundUtils.toRbxAssetId(soundId: SoundId): string?
+	if typeof(soundId) == "Instance" and soundId:IsA("Sound") then
+		return soundId.SoundId
+	elseif type(soundId) == "table" then
 		return RbxAssetUtils.toRbxAssetId(soundId.SoundId)
 	else
 		return RbxAssetUtils.toRbxAssetId(soundId)
 	end
 end
 
-function SoundUtils.isConvertableToRbxAsset(soundId: string | number | SoundOptions): boolean
-	if type(soundId) == "table" then
+function SoundUtils.isConvertableToRbxAsset(soundId: SoundId): boolean
+	if typeof(soundId) == "Instance" and soundId:IsA("Sound") then
+		return RbxAssetUtils.isConvertableToRbxAsset(soundId.SoundId)
+	elseif type(soundId) == "table" then
 		return RbxAssetUtils.isConvertableToRbxAsset(soundId.SoundId)
 	else
 		return RbxAssetUtils.isConvertableToRbxAsset(soundId)
