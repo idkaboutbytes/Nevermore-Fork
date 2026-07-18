@@ -25,6 +25,7 @@ export type SkyboxSide =
 			Gui: Part,
 			_normal: Enum.NormalId,
 			_renderPart: SkyboxRenderPart.SkyboxRenderPart,
+			_renderMethod: ValueObject.ValueObject<FakeSkyboxRenderMethod.FakeSkyboxRenderMethod>,
 			_skyboxWidth: ValueObject.ValueObject<number>,
 			_skyboxCFrame: ValueObject.ValueObject<CFrame>,
 			_skyboxGradient: ValueObject.ValueObject<ColorSequence>,
@@ -42,8 +43,11 @@ function SkyboxSide.new(normal: Enum.NormalId): SkyboxSide
 	self._skyboxWidth = self._maid:Add(ValueObject.new(1024, "number"))
 	self._skyboxCFrame = self._maid:Add(ValueObject.new(CFrame.identity, "CFrame"))
 	self._skyboxGradient = self._maid:Add(ValueObject.new(ColorSequence.new(Color3.new(1, 1, 1)), "ColorSequence"))
+	self._renderMethod =
+		self._maid:Add(ValueObject.new(FakeSkyboxRenderMethod.SURFACEGUI :: any, FakeSkyboxRenderMethod:GetInterface()))
 
 	self._renderPart = self._maid:Add(SkyboxRenderPart.new())
+	self._maid:Add(self._renderPart:SetRenderMethod(self._renderMethod:Observe()))
 	self._renderPart:SetCFrame(
 		Blend.Computed(self._skyboxWidth, self._skyboxCFrame, function(skyboxWidth: number, skyboxCFrame: CFrame)
 			local direction = Vector3.FromNormalId(self._normal)
@@ -75,7 +79,7 @@ function SkyboxSide.SetRenderMethod(
 	self: SkyboxSide,
 	renderMethod: ValueObject.Mountable<FakeSkyboxRenderMethod.FakeSkyboxRenderMethod>
 ): () -> ()
-	return self._renderPart:SetRenderMethod(renderMethod)
+	return self._renderMethod:Mount(renderMethod)
 end
 
 function SkyboxSide.SetZOffset(self: SkyboxSide, zOffset: ValueObject.Mountable<number>): () -> ()
@@ -88,7 +92,7 @@ end
 
 function SkyboxSide._observeImageGradientSequence(self): Observable.Observable<ColorSequence?>
 	return Blend.Computed(
-		self._renderMode,
+		self._renderMethod,
 		self._skyboxGradient,
 		self._normal,
 		function(

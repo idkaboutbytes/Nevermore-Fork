@@ -252,6 +252,10 @@ function Signal.new<T...>(): Signal<T...>
 	return setmetatable({ _head = false }, Signal)
 end
 
+function Signal.isSignal(value: any): boolean
+	return type(value) == "table" and getmetatable(value) == Signal
+end
+
 function Signal.wrap<T...>(signal: RBXScriptSignal): Signal<T...>
 	local wrapper = setmetatable({ _head = false }, Signal)
 	wrapper.RBXScriptConnection = rbxConnect(signal, function(...)
@@ -268,4 +272,8 @@ Signal.Fire = fire
 Signal.DisconnectAll = disconnectAll
 Signal.Destroy = destroy
 
-return { new = Signal.new, wrap = Signal.wrap }
+return {
+	isSignal = Signal.isSignal,
+	new = Signal.new,
+	wrap = Signal.wrap,
+}
