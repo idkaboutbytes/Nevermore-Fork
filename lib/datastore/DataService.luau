@@ -141,7 +141,7 @@ function DataService.Start(self: DataService)
 			const hasPath = type(path) == "string" and path ~= ""
 			const value = if hasPath then DataServiceUtils.readValuePath(profile.Data, path :: string) else profile.Data
 			if value == nil then
-				error(`Data path {path} does not exist for {player.Name}`)
+				return `{player.Name}.{path} = nil (path does not exist)`
 			end
 
 			return `{player.Name}.{if hasPath then path else "Data"} = {encodeCommandValue(value)}`
@@ -176,10 +176,6 @@ function DataService.Start(self: DataService)
 			end
 
 			const profile = getCommandProfile(player)
-			if DataServiceUtils.readValuePath(profile.Data, path) == nil then
-				error(`Data path {path} does not exist for {player.Name}`)
-			end
-
 			const candidateData = TableUtils.deepCopy(profile.Data)
 			const wroteValue, writeError = pcall(DataServiceUtils.writeValuePath, candidateData, path, newValue)
 			if not wroteValue then
@@ -190,6 +186,14 @@ function DataService.Start(self: DataService)
 			const isValid, validationError = pcall(ProfileData.Schema.ser, cursor, candidateData)
 			if not isValid then
 				error(`New value does not match ProfileData.Schema: {validationError}`)
+			end
+			const validationCursor = Squash.frombuffer(Squash.tobuffer(cursor))
+			const decoded, schemaDataOrError = pcall(ProfileData.Schema.des, validationCursor)
+			if not decoded then
+				error(`ProfileData.Schema could not read the validated value: {schemaDataOrError}`)
+			end
+			if DataServiceUtils.readValuePath(schemaDataOrError, path) == nil then
+				error(`Data path {path} is not represented by ProfileData.Schema`)
 			end
 
 			const resolvedValue = DataServiceUtils.readValuePath(candidateData, path)
@@ -370,7 +374,13 @@ end
 function DataService.IsHiddenKey(self: DataService, keyName: string): boolean
 	assert(t.string(keyName), "Bad keyName")
 
-	return self._hiddenKeys:Contains(keyName)
+	for _, hiddenKey in self._hiddenKeys:GetList() do
+		if DataServiceUtils.valuePathsOverlap(hiddenKey, keyName) then
+			return true
+		end
+	end
+
+	return false
 end
 
 --[=[
@@ -465,7 +475,7 @@ function DataService.ReplicateValue(self: DataService, player: Player, keyName: 
 	-- client, but it is still the player's data and still observable here
 	self._valueChanged:Fire(player, keyName, keyValue)
 
-	if self._hiddenKeys:Contains(keyName) then
+	if self:IsHiddenKey(keyName) then
 		return true
 	end
 

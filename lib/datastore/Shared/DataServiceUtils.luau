@@ -48,6 +48,25 @@ function DataServiceUtils.splitValuePath(path: string): (string, string?)
 end
 
 --[=[
+	Returns whether two data paths overlap as an ancestor, descendant, or exact
+	match. Segment boundaries are respected, so `Inventory.Item` does not overlap
+	`Inventory.Items`.
+
+	@within DataServiceUtils
+	@param left string
+	@param right string
+	@return boolean
+]=]
+function DataServiceUtils.valuePathsOverlap(left: string, right: string): boolean
+	assert(type(left) == "string" and left ~= "", "Bad left")
+	assert(type(right) == "string" and right ~= "", "Bad right")
+
+	return left == right
+		or string.sub(left, 1, #right + 1) == right .. "."
+		or string.sub(right, 1, #left + 1) == left .. "."
+end
+
+--[=[
     Reads a value out of an ObservableMap of profile data using a dot-separated
     path, descending into the root key's value for nested paths.
 
