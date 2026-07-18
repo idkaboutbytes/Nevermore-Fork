@@ -28,6 +28,11 @@ const DataServiceUtils = require("DataServiceUtils")
 const DataServiceClient = {}
 DataServiceClient.ServiceName = "DataServiceClient"
 
+type PendingValueChange = {
+	name: string,
+	value: any,
+}
+
 export type DataServiceClient = typeof(setmetatable(
 	{} :: {
 		_serviceBag: ServiceBag.ServiceBag,
@@ -35,6 +40,8 @@ export type DataServiceClient = typeof(setmetatable(
 
 		_data: ObservableMap.ObservableMap<string, any>,
 		_dataPromise: Promise.Promise<any>,
+		_hasLoadedProfile: boolean,
+		_pendingValueChanges: { PendingValueChange },
 	},
 	{} :: typeof({ __index = DataServiceClient })
 ))
@@ -46,9 +53,15 @@ function DataServiceClient.Init(self: DataServiceClient, serviceBag: ServiceBag.
 
 	self._data = self._maid:Add(ObservableMap.new())
 	self._dataPromise = self._maid:GivePromise(Promise.new())
+	self._hasLoadedProfile = false
+	self._pendingValueChanges = {}
 end
 
 function DataServiceClient.Start(self: DataServiceClient)
+	const function applyValueChange(value: PendingValueChange)
+		DataServiceUtils.writeObservableValuePath(self._data, value.name, value.value)
+	end
+
 	DataServiceNetwork.packets.profileLoaded.listen(function(value: { data: buffer, hiddenKeys: { string } })
 		const cursor = Squash.frombuffer(value.data)
 		const success, profile = pcall(ProfileData.Schema.des, cursor)
@@ -68,11 +81,26 @@ function DataServiceClient.Start(self: DataServiceClient)
 			self._data:Set(keyName, keyValue)
 		end
 
+		-- ByteNet may deliver deltas queued during profile setup before this full
+		-- snapshot has reached the client. Applying those deltas to an empty map can
+		-- manufacture an incomplete root whose shape conflicts with a later nested
+		-- write. Install the snapshot first, then replay deltas in receive order.
+		self._hasLoadedProfile = true
+		for _, pendingValueChange in self._pendingValueChanges do
+			applyValueChange(pendingValueChange)
+		end
+		table.clear(self._pendingValueChanges)
+
 		self._dataPromise:Resolve(self:GetData())
 	end)
 
-	DataServiceNetwork.packets.valueChanged.listen(function(value: { name: string, value: any })
-		DataServiceUtils.writeObservableValuePath(self._data, value.name, value.value)
+	DataServiceNetwork.packets.valueChanged.listen(function(value: PendingValueChange)
+		if not self._hasLoadedProfile then
+			table.insert(self._pendingValueChanges, value)
+			return
+		end
+
+		applyValueChange(value)
 	end)
 end
 

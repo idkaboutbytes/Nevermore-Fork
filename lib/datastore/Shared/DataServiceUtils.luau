@@ -164,7 +164,14 @@ function DataServiceUtils.writeValuePath(target: any, path: string, value: any):
 			current[key] = {}
 		end
 
-		assert(type(current[key]) == "table", ("Invalid path '%s'"):format(path))
+		assert(
+			type(current[key]) == "table",
+			("Invalid path '%s': '%s' is %s, expected table"):format(
+				path,
+				table.concat(parts, ".", 1, i),
+				type(current[key])
+			)
+		)
 
 		current = current[key]
 	end
