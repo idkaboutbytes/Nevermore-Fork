@@ -7,8 +7,6 @@ const HttpService = game:GetService("HttpService")
 const Players = game:GetService("Players")
 const RunService = game:GetService("RunService")
 
-const Cmdr = require("@game/ProjectRoot/cmdr/Cmdr")
-
 const require = require("../Loader").load()
 
 const Maid = require("Maid")
