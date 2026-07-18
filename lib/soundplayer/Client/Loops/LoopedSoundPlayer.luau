@@ -345,14 +345,24 @@ function LoopedSoundPlayer._setupLoopScheduling(
 					return
 				end
 
-				soundPlayer.Sound:Play()
 				self._currentSoundLoopedAfterDelay:Fire(soundPlayer.Sound)
+
+				-- A sample/choice listener may replace the active sound synchronously.
+				-- Resume only when this schedule is looping the same sound again.
+				if self._currentActiveSound.Value == soundPlayer.Sound then
+					soundPlayer.Sound:Play()
+				end
 			end)
 		end))
 	else
 		maid:GiveTask(self._currentSoundLooped:Connect(function(loopedSound)
 			if loopedSound == soundPlayer.Sound and self._currentActiveSound.Value == soundPlayer.Sound then
+				soundPlayer.Sound:Pause()
 				self._currentSoundLoopedAfterDelay:Fire(soundPlayer.Sound)
+
+				if self._currentActiveSound.Value == soundPlayer.Sound then
+					soundPlayer.Sound:Play()
+				end
 			end
 		end))
 	end
