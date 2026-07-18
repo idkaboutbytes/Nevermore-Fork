@@ -7,6 +7,8 @@ const HttpService = game:GetService("HttpService")
 const Players = game:GetService("Players")
 const RunService = game:GetService("RunService")
 
+const Cmdr = require("@game/ProjectRoot/cmdr/Cmdr")
+
 const require = require("../Loader").load()
 
 const Maid = require("Maid")
@@ -50,6 +52,7 @@ export type DataService = typeof(setmetatable(
 		_serviceBag: ServiceBag.ServiceBag,
 		_maid: Maid.Maid,
 		_bindToCloseService: BindToCloseService.BindToCloseService,
+		_cmdrService: CmdrService.CmdrService,
 
 		_attributeKeys: ObservableSet.ObservableSet<string>,
 		_hiddenKeys: ObservableSet.ObservableSet<string>,
@@ -71,6 +74,7 @@ function DataService.Init(self: DataService, serviceBag: ServiceBag.ServiceBag)
 	self._serviceBag = assert(serviceBag, "No serviceBag")
 	self._maid = Maid.new()
 	self._bindToCloseService = self._serviceBag:GetService(BindToCloseService)
+	self._cmdrService = self._serviceBag:GetService(CmdrService)
 
 	self._attributeKeys = self._maid:Add(ObservableSet.new())
 	self._hiddenKeys = self._maid:Add(ObservableSet.new())
@@ -120,8 +124,7 @@ function DataService.Start(self: DataService)
 		return if decoded then value else serializedValue
 	end
 
-	const cmdrService: CmdrService.CmdrService = self._serviceBag:GetService(CmdrService)
-	cmdrService:RegisterCommand({
+	self._cmdrService:RegisterCommand({
 		Name = "read-data",
 		Description = "Reads a player's full profile or a dot-separated data path.",
 		Group = "DefaultAdmin",
@@ -150,7 +153,7 @@ function DataService.Start(self: DataService)
 		end,
 	})
 
-	cmdrService:RegisterCommand({
+	self._cmdrService:RegisterCommand({
 		Name = "write-data",
 		Description = "Overwrites an existing data path with JSON or a bare string.",
 		Group = "DefaultAdmin",
@@ -209,7 +212,7 @@ function DataService.Start(self: DataService)
 		end,
 	})
 
-	cmdrService:RegisterCommand({
+	self._cmdrService:RegisterCommand({
 		Name = "reset-data",
 		Description = "Deletes a player's profile and disconnects them so defaults load on rejoin.",
 		Group = "DefaultAdmin",
