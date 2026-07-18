@@ -16,7 +16,6 @@ InputModeType.ClassName = "InputModeType"
 InputModeType.__index = InputModeType
 
 export type InputModeKey = Enum.UserInputType | Enum.KeyCode | string
-export type InputModeTypeDefinition = { InputModeType | InputModeKey }
 
 export type InputModeType = typeof(setmetatable(
 	{} :: {
@@ -26,6 +25,8 @@ export type InputModeType = typeof(setmetatable(
 	},
 	{} :: typeof({ __index = InputModeType })
 ))
+
+export type InputModeTypeDefinition = { InputModeType | InputModeKey }
 
 --[=[
 	Creates an input mode definition.

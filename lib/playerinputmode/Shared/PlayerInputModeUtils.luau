@@ -81,7 +81,8 @@ end
 	@return boolean
 ]=]
 function PlayerInputModeUtils.isInputModeType(playerInputModeType: any): boolean
-	return PlayerInputModeTypes:IsValue(playerInputModeType)
+	const isValue = PlayerInputModeTypes:IsValue(playerInputModeType)
+	return isValue
 end
 
 --[=[

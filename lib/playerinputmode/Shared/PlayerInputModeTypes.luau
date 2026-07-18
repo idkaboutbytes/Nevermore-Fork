@@ -9,10 +9,10 @@ const require = require("../../Loader").load()
 
 const Enums = require("Enums")
 
-export type PlayerInputModeType = "gamepad" | "keyboard" | "touch"
+export type PlayerInputModeType = "GAMEPAD" | "KEYBOARD" | "TOUCH"
 
 return Enums.new({
-	GAMEPAD = "gamepad" :: "gamepad",
-	KEYBOARD = "keyboard" :: "keyboard",
-	TOUCH = "touch" :: "touch",
+	GAMEPAD = "GAMEPAD" :: "GAMEPAD",
+	KEYBOARD = "KEYBOARD" :: "KEYBOARD",
+	TOUCH = "TOUCH" :: "TOUCH",
 })

@@ -46,7 +46,7 @@ end
 function PlayerInputModeServiceClient.Start(self: PlayerInputModeServiceClient)
 	self._selector = self._maid:Add(InputModeTypeSelector.new(self._serviceBag, {
 		InputModeTypes.Gamepads,
-		InputModeTypes.Keyboard,
+		InputModeTypes.KeyboardAndMouse,
 		InputModeTypes.Touch,
 	}))
 
@@ -119,7 +119,7 @@ function PlayerInputModeServiceClient._toPlayerInputModeType(
 ): PlayerInputModeUtils.PlayerInputModeType
 	if inputModeType == InputModeTypes.Gamepads then
 		return PlayerInputModeTypes.GAMEPAD
-	elseif inputModeType == InputModeTypes.Keyboard then
+	elseif inputModeType == InputModeTypes.KeyboardAndMouse then
 		return PlayerInputModeTypes.KEYBOARD
 	elseif inputModeType == InputModeTypes.Touch then
 		return PlayerInputModeTypes.TOUCH
