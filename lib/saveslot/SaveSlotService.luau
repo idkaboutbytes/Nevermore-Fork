@@ -43,6 +43,7 @@ export type SaveSlotService = typeof(setmetatable(
 		_serviceBag: ServiceBag.ServiceBag,
 		_maid: Maid.Maid,
 		_dataService: DataService.DataService,
+		_cmdrService: CmdrService.CmdrService,
 		_readyPromises: { [Player]: Promise.Promise<any> },
 		_explicitSelectionRequired: boolean,
 		_maxSlotCount: number,
@@ -75,6 +76,7 @@ function SaveSlotService.Init(self: SaveSlotService, serviceBag: ServiceBag.Serv
 	self._serviceBag = assert(serviceBag, "No serviceBag")
 	self._maid = Maid.new()
 	self._dataService = self._serviceBag:GetService(DataService)
+	self._cmdrService = self._serviceBag:GetService(CmdrService)
 	self._readyPromises = setmetatable({}, { __mode = "k" }) :: any
 	self._explicitSelectionRequired = false
 	self._maxSlotCount = 1
@@ -141,8 +143,7 @@ function SaveSlotService.Start(self: SaveSlotService)
 		return toMutationResult(success, result)
 	end)
 
-	const cmdrService: CmdrService.CmdrService = self._serviceBag:GetService(CmdrService)
-	cmdrService:RegisterCommand({
+	self._cmdrService:RegisterCommand({
 		Name = "list-save-slots",
 		Description = "Lists a player's save slots.",
 		Group = "DefaultAdmin",
@@ -167,7 +168,7 @@ function SaveSlotService.Start(self: SaveSlotService)
 			return if #lines > 0 then table.concat(lines, "\n") else "No save slots."
 		end,
 	})
-	cmdrService:RegisterCommand({
+	self._cmdrService:RegisterCommand({
 		Name = "set-save-slot",
 		Description = "Selects one of a player's save slots by index.",
 		Group = "DefaultAdmin",
@@ -191,7 +192,7 @@ function SaveSlotService.Start(self: SaveSlotService)
 			return `Selected slot {slotIndex} for {player.Name}.`
 		end,
 	})
-	cmdrService:RegisterCommand({
+	self._cmdrService:RegisterCommand({
 		Name = "create-save-slot",
 		Description = "Creates a player's save slot at an unused index.",
 		Group = "DefaultAdmin",
@@ -207,7 +208,7 @@ function SaveSlotService.Start(self: SaveSlotService)
 			return `Created slot {slotIndex} ({slotIdOrError}) for {player.Name}.`
 		end,
 	})
-	cmdrService:RegisterCommand({
+	self._cmdrService:RegisterCommand({
 		Name = "delete-save-slot",
 		Description = "Deletes one of a player's inactive save slots.",
 		Group = "DefaultAdmin",
