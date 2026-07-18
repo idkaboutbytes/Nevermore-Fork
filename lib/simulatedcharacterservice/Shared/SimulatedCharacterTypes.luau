@@ -79,6 +79,18 @@ export type AnimationConfig = {
 	UseDefaults: boolean?,
 	Idle: string?,
 	Walk: string?,
+	Actions: { [string]: string }?,
+}
+
+export type ResolvedActionAnimation = {
+	Name: string,
+	AnimationId: string,
+}
+
+export type PlayAnimationOptions = {
+	FadeTime: number?,
+	Speed: number?,
+	Looped: boolean?,
 }
 
 export type CharacterDefinition = {
@@ -138,6 +150,8 @@ export type ResolvedCharacterDefinition = {
 	IdleAnimationId: string,
 	WalkAnimationId: string,
 	UseDefaultAnimations: boolean,
+	ActionAnimations: { ResolvedActionAnimation },
+	ActionAnimationIndices: { [string]: number },
 	FlockGroup: string,
 	FlockNeighborRadius: number,
 	FlockSeparationPadding: number,
@@ -224,6 +238,27 @@ export type NetworkSnapshot = {
 export type NetworkSimulationRate = {
 	id: number,
 	rate: number,
+}
+
+export type NetworkAnimationCatalog = {
+	definitionName: string,
+	animationIds: { string },
+}
+
+export type NetworkAnimationPlay = {
+	id: number,
+	animationIndex: number,
+	sequence: number,
+	serverTime: number,
+	fadeTime: number,
+	speed: number,
+	looped: boolean,
+}
+
+export type NetworkAnimationStop = {
+	id: number,
+	sequence: number,
+	fadeTime: number,
 }
 
 export type NetworkDebugPoint = {

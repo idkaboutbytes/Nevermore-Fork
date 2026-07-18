@@ -45,6 +45,27 @@ return TableUtils.deepReadonly(ByteNet.defineNamespace("SimulatedCharacters", fu
 		state = state,
 	})
 
+	const animationCatalog = ByteNet.struct({
+		definitionName = ByteNet.string,
+		animationIds = ByteNet.array(ByteNet.string),
+	})
+
+	const animationPlay = ByteNet.struct({
+		id = ByteNet.uint32,
+		animationIndex = ByteNet.uint8,
+		sequence = ByteNet.uint32,
+		serverTime = ByteNet.float64,
+		fadeTime = ByteNet.float32,
+		speed = ByteNet.float32,
+		looped = ByteNet.bool,
+	})
+
+	const animationStop = ByteNet.struct({
+		id = ByteNet.uint32,
+		sequence = ByteNet.uint32,
+		fadeTime = ByteNet.float32,
+	})
+
 	const debugPoint = ByteNet.struct({
 		x = ByteNet.float32,
 		z = ByteNet.float32,
@@ -65,6 +86,15 @@ return TableUtils.deepReadonly(ByteNet.defineNamespace("SimulatedCharacters", fu
 
 	return {
 		packets = {
+			animationCatalogChanged = ByteNet.definePacket({
+				value = animationCatalog,
+			}),
+			animationPlayed = ByteNet.definePacket({
+				value = animationPlay,
+			}),
+			animationStopped = ByteNet.definePacket({
+				value = animationStop,
+			}),
 			debugRequested = ByteNet.definePacket({
 				value = ByteNet.bool,
 			}),
@@ -108,6 +138,10 @@ return TableUtils.deepReadonly(ByteNet.defineNamespace("SimulatedCharacters", fu
 			}),
 		},
 		queries = {
+			requestAnimationCatalogs = ByteNet.defineQuery({
+				request = ByteNet.nothing,
+				response = ByteNet.array(animationCatalog),
+			}),
 			requestInitialState = ByteNet.defineQuery({
 				request = ByteNet.nothing,
 				response = ByteNet.array(spawn),

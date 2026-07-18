@@ -93,6 +93,9 @@ function SimulatedCharacterService.Init(self: SimulatedCharacterService, service
 	self._clock = assert(self._timeSyncService:GetSyncedClock(), "Server clock is unavailable")
 	self._templateProvider = self._serviceBag:GetService(SimulatedCharacterTemplateProvider)
 
+	SimulatedCharacterNetwork.queries.requestAnimationCatalogs.listen(function()
+		return self:_getAnimationCatalogs()
+	end)
 	SimulatedCharacterNetwork.queries.requestInitialState.listen(function(_, player: Player?)
 		if not player then
 			return {}
@@ -223,6 +226,11 @@ function SimulatedCharacterService.RegisterCharacter(
 	end
 	if resolvedDefinition.TargetingMode == SimulatedCharacterTargetingMode.NEAREST_PLAYER then
 		self._usesTargetCandidates = true
+	end
+	if #resolvedDefinition.ActionAnimations > 0 then
+		SimulatedCharacterNetwork.packets.animationCatalogChanged.sendToAll(
+			self:_toAnimationCatalog(resolvedDefinition)
+		)
 	end
 	return resolvedDefinition
 end
@@ -485,8 +493,12 @@ function SimulatedCharacterService._sendSnapshot(self: SimulatedCharacterService
 			const id = character._id
 			const inRange = playerPosition ~= nil and self:_isCharacterInRange(character, playerPosition)
 			if inRange then
+				const wasInterested = interest[id] == true
 				interest[id] = true
 				table.insert(states, networkStates[index])
+				if not wasInterested then
+					self:_sendCurrentAnimation(character, player)
+				end
 			elseif interest[id] then
 				interest[id] = nil
 				SimulatedCharacterNetwork.packets.stateChanged.sendTo({
@@ -520,6 +532,7 @@ function SimulatedCharacterService._onCharacterStateChanged(
 		}
 		for _, player in Players:GetPlayers() do
 			const interest = self:_getPlayerNetworkInterest(player)
+			const wasInterested = interest[character._id] == true
 			const playerPosition = self:_getPlayerPosition(player)
 			const inRange = playerPosition ~= nil and self:_isCharacterInRange(character, playerPosition)
 			if inRange or interest[character._id] then
@@ -527,9 +540,56 @@ function SimulatedCharacterService._onCharacterStateChanged(
 			end
 			if inRange then
 				interest[character._id] = true
+				if not wasInterested then
+					self:_sendCurrentAnimation(character, player)
+				end
 			else
 				interest[character._id] = nil
 			end
+		end
+	end
+end
+
+function SimulatedCharacterService._onCharacterAnimationPlayed(
+	self: SimulatedCharacterService,
+	character: SimulatedCharacter.SimulatedCharacter,
+	animation: SimulatedCharacterTypes.NetworkAnimationPlay
+)
+	if self._charactersById[character._id] ~= character then
+		return
+	end
+
+	for _, player in Players:GetPlayers() do
+		const interest = self:_getPlayerNetworkInterest(player)
+		const playerPosition = self:_getPlayerPosition(player)
+		const inRange = playerPosition ~= nil and self:_isCharacterInRange(character, playerPosition)
+		if inRange or interest[character._id] then
+			SimulatedCharacterNetwork.packets.animationPlayed.sendTo(animation, player)
+		end
+		if inRange then
+			interest[character._id] = true
+		end
+	end
+end
+
+function SimulatedCharacterService._onCharacterAnimationStopped(
+	self: SimulatedCharacterService,
+	character: SimulatedCharacter.SimulatedCharacter,
+	animation: SimulatedCharacterTypes.NetworkAnimationStop
+)
+	if self._charactersById[character._id] ~= character then
+		return
+	end
+
+	for _, player in Players:GetPlayers() do
+		const interest = self:_getPlayerNetworkInterest(player)
+		const playerPosition = self:_getPlayerPosition(player)
+		const inRange = playerPosition ~= nil and self:_isCharacterInRange(character, playerPosition)
+		if inRange or interest[character._id] then
+			SimulatedCharacterNetwork.packets.animationStopped.sendTo(animation, player)
+		end
+		if inRange then
+			interest[character._id] = true
 		end
 	end
 end
@@ -578,6 +638,17 @@ function SimulatedCharacterService._isCharacterInRange(
 	const delta = character._position - playerPosition
 	const distance = character._replicationDistance + character._definition.HitboxRadius
 	return delta:Dot(delta) <= distance * distance
+end
+
+function SimulatedCharacterService._sendCurrentAnimation(
+	_self: SimulatedCharacterService,
+	character: SimulatedCharacter.SimulatedCharacter,
+	player: Player
+)
+	const animation = character._activeAnimation
+	if animation then
+		SimulatedCharacterNetwork.packets.animationPlayed.sendTo(animation, player)
+	end
 end
 
 function SimulatedCharacterService._sendDebugSnapshot(self: SimulatedCharacterService, player: Player)
@@ -649,6 +720,37 @@ function SimulatedCharacterService._toNetworkDefinition(
 	}
 end
 
+function SimulatedCharacterService._toAnimationCatalog(
+	_self: SimulatedCharacterService,
+	definition: SimulatedCharacterTypes.ResolvedCharacterDefinition
+): SimulatedCharacterTypes.NetworkAnimationCatalog
+	const animationIds = table.create(#definition.ActionAnimations)
+	for index, actionAnimation in definition.ActionAnimations do
+		animationIds[index] = actionAnimation.AnimationId
+	end
+	return {
+		definitionName = definition.Name,
+		animationIds = animationIds,
+	}
+end
+
+function SimulatedCharacterService._getAnimationCatalogs(
+	self: SimulatedCharacterService
+): { SimulatedCharacterTypes.NetworkAnimationCatalog }
+	const definitionNames: { string } = {}
+	for definitionName, definition in self._definitions do
+		if #definition.ActionAnimations > 0 then
+			table.insert(definitionNames, definitionName)
+		end
+	end
+	table.sort(definitionNames)
+	const catalogs = table.create(#definitionNames)
+	for index, definitionName in definitionNames do
+		catalogs[index] = self:_toAnimationCatalog(self._definitions[definitionName])
+	end
+	return catalogs
+end
+
 function SimulatedCharacterService._toNetworkSpawn(
 	self: SimulatedCharacterService,
 	character: SimulatedCharacter.SimulatedCharacter
@@ -672,6 +774,7 @@ function SimulatedCharacterService._getInitialState(
 		result[index] = self:_toNetworkSpawn(character)
 		if playerPosition and self:_isCharacterInRange(character, playerPosition) then
 			interest[character._id] = true
+			self:_sendCurrentAnimation(character, player)
 		end
 	end
 	return result

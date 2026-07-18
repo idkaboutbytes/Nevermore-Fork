@@ -38,6 +38,16 @@ type PendingMotion = {
 	serverTime: number,
 }
 
+type PendingAnimationControl =
+	{
+		kind: "play",
+		data: SimulatedCharacterTypes.NetworkAnimationPlay,
+	}
+	| {
+		kind: "stop",
+		data: SimulatedCharacterTypes.NetworkAnimationStop,
+	}
+
 const SimulatedCharacterServiceClient = {}
 SimulatedCharacterServiceClient.ServiceName = "SimulatedCharacterServiceClient"
 
@@ -54,6 +64,8 @@ export type SimulatedCharacterServiceClient = typeof(setmetatable(
 		_pendingStatesById: { [number]: PendingState },
 		_pendingMotionsById: { [number]: PendingMotion },
 		_pendingSimulationRatesById: { [number]: number },
+		_pendingAnimationsById: { [number]: PendingAnimationControl },
+		_animationCatalogsByDefinition: { [string]: { string } },
 		_removedIds: { [number]: boolean },
 		_modelPool: { [string]: { Model } },
 		_defaultIdleAnimationId: string,
@@ -76,6 +88,8 @@ function SimulatedCharacterServiceClient.Init(self: SimulatedCharacterServiceCli
 	self._pendingStatesById = {}
 	self._pendingMotionsById = {}
 	self._pendingSimulationRatesById = {}
+	self._pendingAnimationsById = {}
+	self._animationCatalogsByDefinition = {}
 	self._removedIds = {}
 	self._modelPool = {}
 	self._defaultIdleAnimationId = ""
@@ -99,6 +113,21 @@ function SimulatedCharacterServiceClient.Init(self: SimulatedCharacterServiceCli
 	SimulatedCharacterNetwork.packets.simulationRateChanged.listen(
 		function(data: SimulatedCharacterTypes.NetworkSimulationRate)
 			self:_handleSimulationRate(data.id, data.rate)
+		end
+	)
+	SimulatedCharacterNetwork.packets.animationCatalogChanged.listen(
+		function(catalog: SimulatedCharacterTypes.NetworkAnimationCatalog)
+			self:_handleAnimationCatalog(catalog)
+		end
+	)
+	SimulatedCharacterNetwork.packets.animationPlayed.listen(
+		function(data: SimulatedCharacterTypes.NetworkAnimationPlay)
+			self:_handleAnimationPlayed(data)
+		end
+	)
+	SimulatedCharacterNetwork.packets.animationStopped.listen(
+		function(data: SimulatedCharacterTypes.NetworkAnimationStop)
+			self:_handleAnimationStopped(data)
 		end
 	)
 	SimulatedCharacterNetwork.packets.stateChanged.listen(function(data: {
@@ -141,9 +170,28 @@ function SimulatedCharacterServiceClient.Start(self: SimulatedCharacterServiceCl
 					character:_render(renderTime)
 				end
 			end))
+			self:_requestAnimationCatalogs()
 			self:_requestInitialState()
 		end)
 		:Catch(warn)
+end
+
+function SimulatedCharacterServiceClient._requestAnimationCatalogs(self: SimulatedCharacterServiceClient)
+	const success, resultOrError = (pcall :: any)(function()
+		return SimulatedCharacterNetwork.queries.requestAnimationCatalogs.invoke(nil)
+	end)
+	if not success then
+		warn(`[SimulatedCharacterServiceClient] - Failed to request animation catalogs: {resultOrError}`)
+		return
+	end
+	if type(resultOrError) ~= "table" then
+		warn("[SimulatedCharacterServiceClient] - Server returned invalid animation catalogs")
+		return
+	end
+
+	for _, catalog in resultOrError :: { SimulatedCharacterTypes.NetworkAnimationCatalog } do
+		self:_handleAnimationCatalog(catalog)
+	end
 end
 
 --[=[
@@ -286,6 +334,78 @@ function SimulatedCharacterServiceClient._handleSpawn(
 		self._pendingMotionsById[spawn.state.id] = nil
 		character:_pushMotion(pendingMotion.motion, pendingMotion.serverTime)
 	end
+	const pendingAnimation = self._pendingAnimationsById[spawn.state.id]
+	if pendingAnimation then
+		self._pendingAnimationsById[spawn.state.id] = nil
+		if pendingAnimation.kind == "play" then
+			character:_playActionAnimation(pendingAnimation.data)
+		else
+			character:_stopActionAnimation(pendingAnimation.data)
+		end
+	end
+end
+
+function SimulatedCharacterServiceClient._handleAnimationCatalog(
+	self: SimulatedCharacterServiceClient,
+	catalog: SimulatedCharacterTypes.NetworkAnimationCatalog
+)
+	if self._destroyed then
+		return
+	end
+
+	const animationIds = table.clone(catalog.animationIds)
+	self._animationCatalogsByDefinition[catalog.definitionName] = table.freeze(animationIds)
+	for _, character in self._charactersById do
+		if character._definition.name == catalog.definitionName then
+			character:_refreshActionAnimation()
+		end
+	end
+end
+
+function SimulatedCharacterServiceClient._handleAnimationPlayed(
+	self: SimulatedCharacterServiceClient,
+	data: SimulatedCharacterTypes.NetworkAnimationPlay
+)
+	if self._destroyed or self._removedIds[data.id] then
+		return
+	end
+
+	const character = self._charactersById[data.id]
+	if character then
+		character:_playActionAnimation(data)
+		return
+	end
+
+	const pending = self._pendingAnimationsById[data.id]
+	if not pending or data.sequence > pending.data.sequence then
+		self._pendingAnimationsById[data.id] = {
+			kind = "play",
+			data = table.clone(data),
+		}
+	end
+end
+
+function SimulatedCharacterServiceClient._handleAnimationStopped(
+	self: SimulatedCharacterServiceClient,
+	data: SimulatedCharacterTypes.NetworkAnimationStop
+)
+	if self._destroyed or self._removedIds[data.id] then
+		return
+	end
+
+	const character = self._charactersById[data.id]
+	if character then
+		character:_stopActionAnimation(data)
+		return
+	end
+
+	const pending = self._pendingAnimationsById[data.id]
+	if not pending or data.sequence > pending.data.sequence then
+		self._pendingAnimationsById[data.id] = {
+			kind = "stop",
+			data = table.clone(data),
+		}
+	end
 end
 
 function SimulatedCharacterServiceClient._handleState(
@@ -360,6 +480,7 @@ function SimulatedCharacterServiceClient._handleRemove(self: SimulatedCharacterS
 	self._pendingStatesById[id] = nil
 	self._pendingMotionsById[id] = nil
 	self._pendingSimulationRatesById[id] = nil
+	self._pendingAnimationsById[id] = nil
 	const character = self._charactersById[id]
 	if character then
 		self._charactersById[id] = nil
@@ -451,6 +572,15 @@ function SimulatedCharacterServiceClient._getDefaultAnimationId(
 	return if animationName == "Idle" then self._defaultIdleAnimationId else self._defaultWalkAnimationId
 end
 
+function SimulatedCharacterServiceClient._getActionAnimationId(
+	self: SimulatedCharacterServiceClient,
+	definitionName: string,
+	animationIndex: number
+): string?
+	const catalog = self._animationCatalogsByDefinition[definitionName]
+	return if catalog then catalog[animationIndex] else nil
+end
+
 function SimulatedCharacterServiceClient.Destroy(self: SimulatedCharacterServiceClient)
 	if self._destroyed then
 		return
@@ -466,6 +596,8 @@ function SimulatedCharacterServiceClient.Destroy(self: SimulatedCharacterService
 	table.clear(self._pendingStatesById)
 	table.clear(self._pendingMotionsById)
 	table.clear(self._pendingSimulationRatesById)
+	table.clear(self._pendingAnimationsById)
+	table.clear(self._animationCatalogsByDefinition)
 	for _, pool in self._modelPool do
 		for _, model in pool do
 			model:Destroy()

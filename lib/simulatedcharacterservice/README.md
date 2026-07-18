@@ -147,6 +147,10 @@ simulatedCharacters:RegisterCharacter("Zombie", {
 		UseDefaults = true,
 		Idle = "",
 		Walk = "",
+		Actions = {
+			Attack = "rbxassetid://1234567890",
+			Stun = "rbxassetid://2345678901",
+		},
 	},
 })
 ```
@@ -184,7 +188,9 @@ target, `WANDER` picks walkable points around the spawn home without leaving the
 configured navigation bounds, `GUARD` chases and returns home, and `ORBIT` moves
 around its target. `NEAREST_PLAYER` performs automatic target acquisition at
 `RetargetInterval`; `MANUAL` only uses targets assigned through the character
-handle.
+handle. Every retarget evaluates all eligible players. The current player is
+retained when tied, but a closer player inside `AggroRange` replaces it. An
+existing target may remain outside `AggroRange` until it leaves `LeashRange`.
 
 `GROUNDED` interprets a spawn Y as the floor, raises the authoritative hitbox by
 half its height plus `GroundOffset`, centers the visual on X/Z, and places the
@@ -245,6 +251,39 @@ effective arrival distance is
 `Movement.StoppingDistance + Targeting.TargetOffset`. `ORBIT` continues to use
 `Movement.OrbitRadius` and its normal stopping distance instead.
 
+## Server-driven action animations
+
+Register combat and interaction animations under `Animations.Actions`, then
+play them by name from the server character handle:
+
+```luau
+zombie:PlayAnimation("Attack", {
+	FadeTime = 0.1,
+	Speed = 1,
+	Looped = false,
+})
+
+-- Stops only when Attack is still the active action.
+zombie:StopAnimation("Attack", 0.15)
+```
+
+Names are case-sensitive. Registration sorts them deterministically and sends
+the asset-ID catalog once per character definition. Play packets use the
+resulting `uint8` index instead of repeating a name or asset ID, and are sent
+only to clients with network interest in that NPC. One action override may be
+active per character; playing another replaces it.
+
+Action tracks use `Enum.AnimationPriority.Action`. A client that mounts the
+model late, returns from culling, or receives the catalog after the play packet
+seeks to the correct point using `TimeSyncService`. A non-looping animation is
+discarded when its elapsed server time is beyond the track length. `Speed` is
+explicit action playback speed and is independent of `SetSimulationRate`,
+which continues to scale locomotion animations.
+
+These tracks are cosmetic. Keep hit timing, damage, cooldowns, and validation
+authoritative in the server combat system rather than relying on client
+animation markers.
+
 ## Spatial queries
 
 Server code can query authoritative NPC centers with either a `Vector2` or
@@ -267,9 +306,9 @@ authoritative character center and do not include its hitbox radius.
 `SetSimulationRate` changes the character's local passage of time without
 changing the service's global 20 Hz simulation or 10 Hz snapshot schedules. It
 scales movement, turning, targeting timers, wandering, orbiting, knockback,
-gravity, extrapolated velocity, and client animation playback. Rate changes use
-one small reliable packet; the rate is not repeated in periodic movement
-snapshots.
+gravity, extrapolated velocity, and client locomotion animation playback. Rate
+changes use one small reliable packet; the rate is not repeated in periodic
+movement snapshots.
 
 Spawned handles expose lifecycle signals without adding binders or Instances:
 

@@ -3,6 +3,7 @@
 	@class DataService
 ]=]
 
+const HttpService = game:GetService("HttpService")
 const Players = game:GetService("Players")
 const RunService = game:GetService("RunService")
 
@@ -22,6 +23,7 @@ const Promise = require("Promise")
 const PromiseUtils = require("PromiseUtils")
 const PromiseMaidUtils = require("PromiseMaidUtils")
 const BindToCloseService = require("BindToCloseService")
+const CmdrService = require("CmdrService")
 const Squash = require("Squash")
 const TableUtils = require("TableUtils")
 const AttributeUtils = require("AttributeUtils")
@@ -90,6 +92,139 @@ function DataService.Start(self: DataService)
 		self.DataStore = self.DataStore.Mock :: any
 	end
 
+	local function getCommandProfile(player: Player): ProfileStore.Profile<any>
+		const loaded, profileOrError = self:PromiseProfile(player):Yield()
+		if not loaded then
+			error(tostring(profileOrError))
+		end
+
+		const profile = profileOrError :: ProfileStore.Profile<any>
+		if not profile:IsActive() then
+			error(`Profile is not active for {player.Name}`)
+		end
+		return profile
+	end
+
+	local function encodeCommandValue(value: any): string
+		const encoded, resultOrError = (pcall :: any)(HttpService.JSONEncode, HttpService, value)
+		if not encoded then
+			error(`Data cannot be displayed as JSON: {resultOrError}`)
+		end
+		return resultOrError :: string
+	end
+
+	local function decodeCommandValue(serializedValue: string): any
+		const decoded, value = (pcall :: any)(HttpService.JSONDecode, HttpService, serializedValue)
+		return if decoded then value else serializedValue
+	end
+
+	const cmdrService: CmdrService.CmdrService = self._serviceBag:GetService(CmdrService)
+	cmdrService:RegisterCommand({
+		Name = "read-data",
+		Description = "Reads a player's full profile or a dot-separated data path.",
+		Group = "DefaultAdmin",
+		Args = {
+			{
+				Type = "player",
+				Name = "player",
+				Description = "The player whose data should be read.",
+			},
+			{
+				Type = "string",
+				Name = "path",
+				Description = "An optional dot-separated path, such as Inventory.Items.",
+				Optional = true,
+			},
+		},
+		Run = function(_, player: Player, path: string?)
+			const profile = getCommandProfile(player)
+			const hasPath = type(path) == "string" and path ~= ""
+			const value = if hasPath then DataServiceUtils.readValuePath(profile.Data, path :: string) else profile.Data
+			if value == nil then
+				error(`Data path {path} does not exist for {player.Name}`)
+			end
+
+			return `{player.Name}.{if hasPath then path else "Data"} = {encodeCommandValue(value)}`
+		end,
+	})
+
+	cmdrService:RegisterCommand({
+		Name = "write-data",
+		Description = "Overwrites an existing data path with JSON or a bare string.",
+		Group = "DefaultAdmin",
+		Args = {
+			{
+				Type = "player",
+				Name = "player",
+				Description = "The player whose data should be changed.",
+			},
+			{
+				Type = "string",
+				Name = "path",
+				Description = "The existing dot-separated path to overwrite.",
+			},
+			{
+				Type = "string",
+				Name = "newValue",
+				Description = "JSON for typed values and tables, or unquoted text for a string.",
+			},
+		},
+		Run = function(_, player: Player, path: string, serializedValue: string)
+			const newValue = decodeCommandValue(serializedValue)
+			if newValue == nil then
+				error("JSON null cannot be written to profile data")
+			end
+
+			const profile = getCommandProfile(player)
+			if DataServiceUtils.readValuePath(profile.Data, path) == nil then
+				error(`Data path {path} does not exist for {player.Name}`)
+			end
+
+			const candidateData = TableUtils.deepCopy(profile.Data)
+			const wroteValue, writeError = pcall(DataServiceUtils.writeValuePath, candidateData, path, newValue)
+			if not wroteValue then
+				error(`Cannot write data path {path}: {writeError}`)
+			end
+
+			const cursor = Squash.cursor()
+			const isValid, validationError = pcall(ProfileData.Schema.ser, cursor, candidateData)
+			if not isValid then
+				error(`New value does not match ProfileData.Schema: {validationError}`)
+			end
+
+			const resolvedValue = DataServiceUtils.readValuePath(candidateData, path)
+			self:SetValue(player, path, resolvedValue)
+			const saved, saveError = self:SaveProfile(player):Yield()
+			if not saved then
+				error(`Data changed in memory but the immediate save failed: {saveError}`)
+			end
+
+			return `Set {player.Name}.{path} = {encodeCommandValue(resolvedValue)}`
+		end,
+	})
+
+	cmdrService:RegisterCommand({
+		Name = "reset-data",
+		Description = "Deletes a player's profile and disconnects them so defaults load on rejoin.",
+		Group = "DefaultAdmin",
+		Args = {
+			{
+				Type = "player",
+				Name = "player",
+				Description = "The player whose profile should be reset.",
+			},
+		},
+		Run = function(_, player: Player)
+			getCommandProfile(player)
+			const reset, resetError = self:DeleteProfileAsync(player):Yield()
+			if not reset then
+				error(resetError)
+			end
+
+			return `Reset {player.Name}'s data. They must rejoin to load the defaults.`
+		end,
+	})
+
 	self._maid:GiveTask(self._bindToCloseService:RegisterPromiseOnCloseCallback(function()
 		return self:SaveAllProfilesAsync()
 	end))
@@ -153,7 +288,7 @@ end
 	@within DataService
 	@returns string, string
 ]=]
-function DataService.GetStoreNameAndVersion(self: DataService)
+function DataService.GetStoreNameAndVersion(_self: DataService)
 	return `{PROFILE_NAME}_{PROFILE_VERSION}`
 end
 
@@ -557,7 +692,7 @@ function DataService.GetValue<T>(self: DataService, player: Player, keyName: str
 	const profile = self:GetProfile(player)
 	assert(profile ~= nil and profile:IsActive(), "Bad profile")
 
-	return (profile.Data :: any)[keyName] :: T?
+	return DataServiceUtils.readValuePath(profile.Data, keyName) :: T?
 end
 
 --[=[

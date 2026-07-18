@@ -44,6 +44,8 @@ export type SimulatedCharacter = typeof(setmetatable(
 		_replicationDistance: number,
 		_simulationRate: number,
 		_simulationTime: number,
+		_animationSequence: number,
+		_activeAnimation: SimulatedCharacterTypes.NetworkAnimationPlay?,
 		_homePosition: Vector2,
 		_random: Random,
 		_nextRetargetAt: number,
@@ -93,6 +95,8 @@ function SimulatedCharacter.new(
 	self._replicationDistance = definition.ReplicationDistance
 	self._simulationRate = SimulatedCharacterConstants.DEFAULT_CHARACTER_SIMULATION_RATE or 1
 	self._simulationTime = 0
+	self._animationSequence = 0
+	self._activeAnimation = nil
 	self._homePosition = position
 	self._random = Random.new(id)
 	self._nextRetargetAt = 0
@@ -213,6 +217,94 @@ function SimulatedCharacter.SetSimulationRate(self: SimulatedCharacter, rate: nu
 
 	self._simulationRate = rate
 	self._service:_onCharacterSimulationRateChanged(self)
+end
+
+--[=[
+	Plays a registered action animation on interested clients. Action animations
+	are cosmetic; authoritative combat timing remains on the server.
+
+	```lua
+	zombie:PlayAnimation("Attack", {
+		FadeTime = 0.1,
+		Speed = 1,
+	})
+	```
+
+	@within SimulatedCharacter
+	@param animationName string
+	@param options PlayAnimationOptions?
+]=]
+function SimulatedCharacter.PlayAnimation(
+	self: SimulatedCharacter,
+	animationName: string,
+	options: SimulatedCharacterTypes.PlayAnimationOptions?
+)
+	assert(not self._destroyed, "SimulatedCharacter is destroyed")
+	assert(type(animationName) == "string" and animationName ~= "", "Bad animationName")
+	assert(options == nil or type(options) == "table", "Bad options")
+	const animationIndex =
+		assert(self._definition.ActionAnimationIndices[animationName], `Unknown action animation {animationName}`)
+	const resolvedOptions = options or {}
+	const fadeTime = if resolvedOptions.FadeTime ~= nil then resolvedOptions.FadeTime else 0.1
+	const speed = if resolvedOptions.Speed ~= nil then resolvedOptions.Speed else 1
+	const looped = resolvedOptions.Looped == true
+	assert(
+		type(fadeTime) == "number" and fadeTime == fadeTime and fadeTime >= 0 and fadeTime < math.huge,
+		"Bad FadeTime"
+	)
+	assert(type(speed) == "number" and speed == speed and speed >= 0 and speed < math.huge, "Bad Speed")
+	assert(resolvedOptions.Looped == nil or type(resolvedOptions.Looped) == "boolean", "Bad Looped")
+
+	const sequence = self._animationSequence + 1
+	assert(sequence <= 4_294_967_295, "Animation sequence space exhausted")
+	self._animationSequence = sequence
+	const animation: SimulatedCharacterTypes.NetworkAnimationPlay = {
+		id = self._id,
+		animationIndex = animationIndex,
+		sequence = sequence,
+		serverTime = self._service:_getTime(),
+		fadeTime = fadeTime,
+		speed = speed,
+		looped = looped,
+	}
+	self._activeAnimation = animation
+	self._service:_onCharacterAnimationPlayed(self, animation)
+end
+
+--[=[
+	Stops the currently playing registered action when its name matches.
+
+	@within SimulatedCharacter
+	@param animationName string
+	@param fadeTime number?
+]=]
+function SimulatedCharacter.StopAnimation(self: SimulatedCharacter, animationName: string, fadeTime: number?)
+	assert(not self._destroyed, "SimulatedCharacter is destroyed")
+	assert(type(animationName) == "string" and animationName ~= "", "Bad animationName")
+	const animationIndex =
+		assert(self._definition.ActionAnimationIndices[animationName], `Unknown action animation {animationName}`)
+	const resolvedFadeTime = if fadeTime ~= nil then fadeTime else 0.1
+	assert(
+		type(resolvedFadeTime) == "number"
+			and resolvedFadeTime == resolvedFadeTime
+			and resolvedFadeTime >= 0
+			and resolvedFadeTime < math.huge,
+		"Bad fadeTime"
+	)
+	const activeAnimation = self._activeAnimation
+	if not activeAnimation or activeAnimation.animationIndex ~= animationIndex then
+		return
+	end
+
+	const sequence = self._animationSequence + 1
+	assert(sequence <= 4_294_967_295, "Animation sequence space exhausted")
+	self._animationSequence = sequence
+	self._activeAnimation = nil
+	self._service:_onCharacterAnimationStopped(self, {
+		id = self._id,
+		sequence = sequence,
+		fadeTime = resolvedFadeTime,
+	})
 end
 
 --[=[
@@ -508,21 +600,11 @@ function SimulatedCharacter._retargetNearestPlayer(
 )
 	const definition = self._definition
 	const currentTarget = self._targetPlayer
-	if currentTarget then
-		for _, candidate in targetCandidates do
-			if candidate.Player == currentTarget then
-				const homeDelta = candidate.Position - self._homePosition
-				if homeDelta:Dot(homeDelta) <= definition.LeashRange * definition.LeashRange then
-					return
-				end
-				break
-			end
-		end
-	end
-
-	local nearestPlayer = nil
-	local nearestDistanceSquared = definition.AggroRange * definition.AggroRange
+	const aggroDistanceSquared = definition.AggroRange * definition.AggroRange
 	const leashDistanceSquared = definition.LeashRange * definition.LeashRange
+	local currentDistanceSquared: number? = nil
+	local nearestPlayer: Player? = nil
+	local nearestDistanceSquared = math.huge
 	for _, candidate in targetCandidates do
 		const homeDelta = candidate.Position - self._homePosition
 		if homeDelta:Dot(homeDelta) > leashDistanceSquared then
@@ -531,14 +613,29 @@ function SimulatedCharacter._retargetNearestPlayer(
 
 		const targetDelta = candidate.Position - self._position
 		const distanceSquared = targetDelta:Dot(targetDelta)
-		if distanceSquared <= nearestDistanceSquared then
+		if candidate.Player == currentTarget then
+			currentDistanceSquared = distanceSquared
+		end
+		if
+			distanceSquared <= aggroDistanceSquared
+			and (
+				nearestPlayer == nil
+				or distanceSquared < nearestDistanceSquared
+				or (distanceSquared == nearestDistanceSquared and candidate.Player.UserId < nearestPlayer.UserId)
+			)
+		then
 			nearestPlayer = candidate.Player
 			nearestDistanceSquared = distanceSquared
 		end
 	end
 
-	self:_setTargetPlayer(nearestPlayer)
-	if nearestPlayer then
+	const selectedPlayer = if currentTarget
+			and currentDistanceSquared
+			and (nearestPlayer == nil or currentDistanceSquared <= nearestDistanceSquared)
+		then currentTarget
+		else nearestPlayer
+	self:_setTargetPlayer(selectedPlayer)
+	if selectedPlayer then
 		self._targetPosition = nil
 		self._returningHome = false
 	end

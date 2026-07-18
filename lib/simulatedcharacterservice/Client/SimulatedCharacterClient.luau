@@ -50,6 +50,11 @@ export type SimulatedCharacterClient = typeof(setmetatable(
 		_idleTrack: AnimationTrack?,
 		_walkTrack: AnimationTrack?,
 		_activeTrack: AnimationTrack?,
+		_animationSequence: number,
+		_actionState: SimulatedCharacterTypes.NetworkAnimationPlay?,
+		_actionTrack: AnimationTrack?,
+		_actionTracksByIndex: { [number]: AnimationTrack },
+		_actionLoadToken: number,
 	},
 	SimulatedCharacterClient
 ))
@@ -85,6 +90,11 @@ function SimulatedCharacterClient.new(
 	self._idleTrack = nil
 	self._walkTrack = nil
 	self._activeTrack = nil
+	self._animationSequence = 0
+	self._actionState = nil
+	self._actionTrack = nil
+	self._actionTracksByIndex = {}
+	self._actionLoadToken = 0
 
 	ClientCulling.AddObject(self, spawn.definition.cullDistance)
 	return self
@@ -376,18 +386,7 @@ function SimulatedCharacterClient._loadAnimations(self: SimulatedCharacterClient
 		return
 	end
 
-	local controller: Humanoid | AnimationController? = model:FindFirstChildOfClass("Humanoid")
-	if not controller then
-		controller = model:FindFirstChildOfClass("AnimationController")
-	end
-	if not controller then
-		const animationController = Instance.new("AnimationController")
-		animationController.Name = "AnimationController"
-		animationController.Parent = model
-		controller = animationController
-	end
-
-	const animator = AnimationUtils.getOrCreateAnimator(controller, false)
+	const animator = AnimationUtils.getOrCreateAnimator(model, false)
 	const animate = model:FindFirstChild("Animate")
 	const templateAnimationIds = if animate
 		then DefaultCharacterAnimationUtils.getAnimationIdsFromAnimate(animate)
@@ -418,6 +417,7 @@ function SimulatedCharacterClient._loadAnimations(self: SimulatedCharacterClient
 			AnimationUtils.getOrCreateAnimationTrack(animator, walkAnimationId, Enum.AnimationPriority.Movement)
 	end
 	self:_updateAnimation()
+	self:_refreshActionAnimation()
 end
 
 function SimulatedCharacterClient._refreshAnimations(self: SimulatedCharacterClient)
@@ -469,7 +469,119 @@ function SimulatedCharacterClient._setSimulationRate(self: SimulatedCharacterCli
 	end
 end
 
+function SimulatedCharacterClient._playActionAnimation(
+	self: SimulatedCharacterClient,
+	data: SimulatedCharacterTypes.NetworkAnimationPlay
+)
+	if self._destroyed or data.id ~= self._id or data.sequence <= self._animationSequence then
+		return
+	end
+
+	self._animationSequence = data.sequence
+	self._actionState = table.clone(data)
+	self._actionLoadToken += 1
+	self._maid._actionLengthConnection = nil
+	if self._model and not self._ragdolled then
+		self:_startActionAnimation()
+	end
+end
+
+function SimulatedCharacterClient._stopActionAnimation(
+	self: SimulatedCharacterClient,
+	data: SimulatedCharacterTypes.NetworkAnimationStop
+)
+	if self._destroyed or data.id ~= self._id or data.sequence <= self._animationSequence then
+		return
+	end
+
+	self._animationSequence = data.sequence
+	self._actionState = nil
+	self._actionLoadToken += 1
+	self._maid._actionLengthConnection = nil
+	const actionTrack = self._actionTrack
+	self._actionTrack = nil
+	if actionTrack then
+		actionTrack:Stop(data.fadeTime)
+	end
+end
+
+function SimulatedCharacterClient._refreshActionAnimation(self: SimulatedCharacterClient)
+	if self._model and not self._ragdolled and self._actionState and not self._actionTrack then
+		self:_startActionAnimation()
+	end
+end
+
+function SimulatedCharacterClient._startActionAnimation(self: SimulatedCharacterClient)
+	const model = self._model
+	const actionState = self._actionState
+	if not model or not actionState or self._ragdolled then
+		return
+	end
+
+	const animationId = self._service:_getActionAnimationId(self._definition.name, actionState.animationIndex)
+	if not animationId then
+		return
+	end
+
+	self._actionLoadToken += 1
+	const loadToken = self._actionLoadToken
+	self._maid._actionLengthConnection = nil
+	local track = self._actionTracksByIndex[actionState.animationIndex]
+	if not track then
+		const animator = AnimationUtils.getOrCreateAnimator(model, false)
+		track = AnimationUtils.getOrCreateAnimationTrack(animator, animationId, Enum.AnimationPriority.Action)
+		if not track then
+			warn(`[SimulatedCharacterClient] - Failed to load action animation {animationId}`)
+			return
+		end
+		self._actionTracksByIndex[actionState.animationIndex] = track
+	end
+
+	const previousTrack = self._actionTrack
+	if previousTrack then
+		previousTrack:Stop(if previousTrack == track then 0 else actionState.fadeTime)
+	end
+	self._actionTrack = track
+	track.Looped = actionState.looped
+	track:Play(actionState.fadeTime, 1, actionState.speed)
+
+	local function synchronizeTimePosition()
+		if
+			self._destroyed
+			or self._actionLoadToken ~= loadToken
+			or self._actionTrack ~= track
+			or not self._actionState
+			or self._actionState.sequence ~= actionState.sequence
+		then
+			return
+		end
+
+		const length = track.Length
+		if length <= 0 then
+			return
+		end
+		self._maid._actionLengthConnection = nil
+		const elapsed = math.max(0, self._service:_getTime() - actionState.serverTime) * actionState.speed
+		if actionState.looped then
+			track.TimePosition = elapsed % length
+		elseif elapsed < length then
+			track.TimePosition = elapsed
+		else
+			track:Stop(0)
+			self._actionTrack = nil
+			self._actionState = nil
+		end
+	end
+
+	synchronizeTimePosition()
+	if track.Length <= 0 and self._actionTrack == track then
+		self._maid._actionLengthConnection = track:GetPropertyChangedSignal("Length"):Connect(synchronizeTimePosition)
+	end
+end
+
 function SimulatedCharacterClient._stopAnimations(self: SimulatedCharacterClient)
+	self._actionLoadToken += 1
+	self._maid._actionLengthConnection = nil
 	if self._idleTrack then
 		self._idleTrack:Stop(0)
 		self._idleTrack:Destroy()
@@ -481,6 +593,12 @@ function SimulatedCharacterClient._stopAnimations(self: SimulatedCharacterClient
 	self._idleTrack = nil
 	self._walkTrack = nil
 	self._activeTrack = nil
+	for _, track in self._actionTracksByIndex do
+		track:Stop(0)
+		track:Destroy()
+	end
+	table.clear(self._actionTracksByIndex)
+	self._actionTrack = nil
 end
 
 function SimulatedCharacterClient._setModelRagdolled(

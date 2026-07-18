@@ -115,6 +115,7 @@ function SimulatedCharacterUtils.resolveDefinition(
 	assert(animations.UseDefaults == nil or type(animations.UseDefaults) == "boolean", "Bad Animations.UseDefaults")
 	assert(animations.Idle == nil or type(animations.Idle) == "string", "Bad Animations.Idle")
 	assert(animations.Walk == nil or type(animations.Walk) == "string", "Bad Animations.Walk")
+	assert(animations.Actions == nil or type(animations.Actions) == "table", "Bad Animations.Actions")
 	assert(definition.TemplateName == nil or type(definition.TemplateName) == "string", "Bad TemplateName")
 	assert(definition.MoveSpeed == nil or type(definition.MoveSpeed) == "number", "Bad MoveSpeed")
 	assert(definition.TurnSpeed == nil or type(definition.TurnSpeed) == "number", "Bad TurnSpeed")
@@ -254,6 +255,24 @@ function SimulatedCharacterUtils.resolveDefinition(
 	assert(type(idleAnimationId) == "string", "Bad Animations.Idle")
 	assert(type(walkAnimationId) == "string", "Bad Animations.Walk")
 	assert(type(useDefaultAnimations) == "boolean", "Bad Animations.UseDefaults")
+	const actionAnimationNames: { string } = {}
+	for actionName, animationId in animations.Actions or {} do
+		assert(type(actionName) == "string" and actionName ~= "", "Bad Animations.Actions name")
+		assert(type(animationId) == "string" and animationId ~= "", `Bad Animations.Actions.{actionName}`)
+		table.insert(actionAnimationNames, actionName)
+	end
+	table.sort(actionAnimationNames)
+	assert(#actionAnimationNames <= 255, "Animations.Actions supports at most 255 entries")
+	const actionAnimations: { SimulatedCharacterTypes.ResolvedActionAnimation } = table.create(#actionAnimationNames)
+	const actionAnimationIndices: { [string]: number } = {}
+	for index, actionName in actionAnimationNames do
+		const animationId = (animations.Actions :: { [string]: string })[actionName]
+		actionAnimations[index] = table.freeze({
+			Name = actionName,
+			AnimationId = animationId,
+		})
+		actionAnimationIndices[actionName] = index
+	end
 
 	const flockGroup = if flocking.Group ~= nil then flocking.Group else definition.FlockGroup or ""
 	const flockNeighborRadius = flocking.NeighborRadius or SimulatedCharacterConstants.DEFAULT_FLOCK_NEIGHBOR_RADIUS
@@ -303,6 +322,8 @@ function SimulatedCharacterUtils.resolveDefinition(
 		IdleAnimationId = idleAnimationId,
 		WalkAnimationId = walkAnimationId,
 		UseDefaultAnimations = useDefaultAnimations,
+		ActionAnimations = table.freeze(actionAnimations),
+		ActionAnimationIndices = table.freeze(actionAnimationIndices),
 		FlockGroup = flockGroup,
 		FlockNeighborRadius = flockNeighborRadius,
 		FlockSeparationPadding = flockSeparationPadding,
