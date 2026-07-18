@@ -12,12 +12,13 @@ Profile
     ├── ActiveSlotId
     ├── LastActiveSlotId
     ├── Metadata[slotId]
-    └── Slots[slotId]       (server-only gameplay data)
+    └── Slots[slotId]       (stored server-side; active slot mirrors read-only)
 ```
 
 Selecting a slot changes which `Slots[slotId]` table the server API reads and
-writes. Slot contents are registered as a hidden DataService path before
-profiles load. Clients receive only active IDs and metadata.
+writes. The entire `SaveSlots` branch is hidden from ordinary DataService
+replication before profiles load. Compact metadata and lazy selected-slot data
+use the dedicated SaveSlot transport; inactive slots never leave the server.
 
 This is intentionally different from Quenty's original implementation, which
 creates DataStore substores. Your DataService already owns one session-locked
@@ -27,10 +28,12 @@ fight that ownership model.
 ## ProfileData setup
 
 The consuming game must add this shape to both `ProfileData.Template` and
-`ProfileData.Schema`. `SlotDataSchema` is game-specific and must match the data
-passed to `SetDefaultSlotData`. Before starting the ServiceBag, configure either
-`SetDefaultSlotData` or `SetDefaultSlotDataProvider`; the service will not guess a
-schema-dependent default.
+`ProfileData.Schema`, and export `SlotDataSchema`. SaveSlot uses that exported
+schema to compress lazy active-slot query results on both the server and client.
+It must match the data passed to `SetDefaultSlotData`. Before starting the
+ServiceBag, configure either `SetDefaultSlotData` or
+`SetDefaultSlotDataProvider`; the service will not guess a schema-dependent
+default.
 
 ```luau
 const Squash = require("Squash")
@@ -50,6 +53,9 @@ const SlotDataSchema = Squash.record({
 })
 
 local ProfileData = {}
+
+-- Required by SaveSlotSerializationUtils on both realms.
+ProfileData.SlotDataSchema = SlotDataSchema
 
 ProfileData.Template = {
 	-- Account-wide fields belong outside SaveSlots.
@@ -167,8 +173,10 @@ shutdown flushing, profile reconciliation, and datastore failure handling.
 
 ## Client usage
 
-The client service reads metadata from `DataServiceClient` and uses ByteNet only
-for validated mutations:
+The client requests compact slot metadata during startup. `ReadyAsync()` waits
+for that metadata, but deliberately does not request gameplay data. Use an async
+read when you need a one-time active-slot snapshot, or subscribe to an observer
+to keep a value current:
 
 ```luau
 const SaveSlotServiceClient = require("SaveSlotServiceClient")
@@ -179,10 +187,22 @@ saveSlotsClient:ReadyAsync():Then(function()
 	for _, metadata in saveSlotsClient:GetSlotList() do
 		print(metadata.SlotIndex, metadata.SlotName, metadata.Summary)
 	end
+
+	saveSlotsClient:GetValueAsync("Coins"):Then(function(coins)
+		print("Coins", coins)
+	end)
 end)
 
 saveSlotsClient:ObserveActiveSlotId():Subscribe(function(slotId)
 	print("Active slot", slotId)
+end)
+
+saveSlotsClient:ObserveAtKey("Coins"):Subscribe(function(coins)
+	print("Coins changed", coins)
+end)
+
+saveSlotsClient:ObserveActiveSlotData():Subscribe(function(slotData)
+	print("Active slot data", slotData)
 end)
 
 saveSlotsClient:CreateSlotAsync(2, { SlotName = "Mage" }):Then(function(slotId)
@@ -190,9 +210,26 @@ saveSlotsClient:CreateSlotAsync(2, { SlotName = "Mage" }):Then(function(slotId)
 end)
 ```
 
-Clients cannot read or write slot gameplay data directly. Their mutation
-methods can only manage their own slots, and the server validates slot bounds,
-ownership, immutable IDs/indexes, active-slot deletion, and metadata lengths.
+`GetActiveSlotDataAsync` and `GetValueAsync` perform one compressed query.
+`GetActiveSlotData` and `GetValue` read the resulting cache synchronously.
+Observers perform the first query lazily, receive only a compact `u32`
+invalidation when server data changes, and re-query at most once per deferred
+batch. Unsubscribing the last observer disables invalidations on the server.
+
+The wire format never sends metadata tables through `ByteNet.unknown`:
+
+- Squash records remove keys such as `SlotName`, `Summary`, and `CreatedTime`
+  from the payload because both realms already know the schema.
+- Slot GUIDs occupy 16 bytes instead of 36-byte strings.
+- Active and last-active selections use their `u16` slot indexes rather than
+  repeating GUIDs.
+- Timestamps use `u32`, and slot state changes made in one task are coalesced
+  into one buffer.
+- Active gameplay data is serialized by `ProfileData.SlotDataSchema`, and only
+  the currently selected slot can be queried.
+
+All client gameplay access remains read-only. The server owns every write, and
+inactive slot data never leaves the server.
 
 ## Cmdr
 

@@ -1,7 +1,7 @@
 --!strict
 --[=[
-	ByteNet queries for player-owned save-slot mutations. Slot contents never use
-	this network and remain server-only inside DataService.
+	ByteNet transport for player-owned save-slot mutations and the local player's
+	active-slot mirror. Inactive slot contents remain server-only.
 
 	@network SaveSlotNetwork
 ]=]
@@ -17,9 +17,18 @@ return TableUtils.deepReadonly(ByteNet.defineNamespace("SaveSlots", function()
 		error = ByteNet.string,
 		slotId = ByteNet.string,
 	})
-
 	return {
-		packets = {},
+		packets = {
+			slotStateChanged = ByteNet.definePacket({
+				value = ByteNet.buff,
+			}),
+			activeSlotInvalidated = ByteNet.definePacket({
+				value = ByteNet.uint32,
+			}),
+			activeSlotSubscriptionChanged = ByteNet.definePacket({
+				value = ByteNet.bool,
+			}),
+		},
 		queries = {
 			getConfig = ByteNet.defineQuery({
 				request = ByteNet.nothing,
@@ -27,6 +36,14 @@ return TableUtils.deepReadonly(ByteNet.defineNamespace("SaveSlots", function()
 					explicitSelection = ByteNet.bool,
 					maxSlotCount = ByteNet.uint16,
 				}),
+			}),
+			getSlotState = ByteNet.defineQuery({
+				request = ByteNet.nothing,
+				response = ByteNet.buff,
+			}),
+			getActiveSlotData = ByteNet.defineQuery({
+				request = ByteNet.bool,
+				response = ByteNet.buff,
 			}),
 			selectSlot = ByteNet.defineQuery({
 				request = ByteNet.string,

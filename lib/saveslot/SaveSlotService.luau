@@ -15,6 +15,7 @@ const require = require("../Loader").load()
 
 const CmdrService = require("CmdrService")
 const DataService = require("DataService")
+const DataServiceUtils = require("DataServiceUtils")
 const Maid = require("Maid")
 const Observable = require("Observable")
 const Promise = require("Promise")
@@ -22,6 +23,7 @@ const Rx = require("Rx")
 const RxPlayerUtils = require("RxPlayerUtils")
 const SaveSlotConstants = require("SaveSlotConstants")
 const SaveSlotNetwork = require("SaveSlotNetwork")
+const SaveSlotSerializationUtils = require("SaveSlotSerializationUtils")
 const SaveSlotTypes = require("SaveSlotTypes")
 const SaveSlotUtils = require("SaveSlotUtils")
 const ServiceBag = require("ServiceBag")
@@ -45,6 +47,10 @@ export type SaveSlotService = typeof(setmetatable(
 		_dataService: DataService.DataService,
 		_cmdrService: CmdrService.CmdrService,
 		_readyPromises: { [Player]: Promise.Promise<any> },
+		_slotStateSequences: { [Player]: number },
+		_activeSlotDataSequences: { [Player]: number },
+		_replicatedActiveSlotIds: { [Player]: SaveSlotTypes.SlotId },
+		_pendingSlotStateReplications: { [Player]: boolean },
 		_explicitSelectionRequired: boolean,
 		_maxSlotCount: number,
 		_defaultSlotData: any,
@@ -78,6 +84,10 @@ function SaveSlotService.Init(self: SaveSlotService, serviceBag: ServiceBag.Serv
 	self._dataService = self._serviceBag:GetService(DataService)
 	self._cmdrService = self._serviceBag:GetService(CmdrService)
 	self._readyPromises = setmetatable({}, { __mode = "k" }) :: any
+	self._slotStateSequences = setmetatable({}, { __mode = "k" }) :: any
+	self._activeSlotDataSequences = setmetatable({}, { __mode = "k" }) :: any
+	self._replicatedActiveSlotIds = setmetatable({}, { __mode = "k" }) :: any
+	self._pendingSlotStateReplications = setmetatable({}, { __mode = "k" }) :: any
 	self._explicitSelectionRequired = false
 	self._maxSlotCount = 1
 	self._defaultSlotData = nil
@@ -85,9 +95,13 @@ function SaveSlotService.Init(self: SaveSlotService, serviceBag: ServiceBag.Serv
 	self._summaryProvider = nil
 	self._started = false
 
-	-- Slot contents are server-only. Metadata and active IDs continue through the
-	-- ordinary DataService replication path.
-	self._dataService:SetHiddenKey(SaveSlotConstants.SLOTS_PATH)
+	-- Inactive slot contents are server-only. The custom replicator replaces raw
+	-- DataService table references with schema-compressed slot state and lazy
+	-- active-slot invalidations.
+	self._dataService:SetHiddenKey(SaveSlotConstants.ROOT_PATH)
+	self._dataService:AddReplicator(SaveSlotConstants.ROOT_PATH, function(player, _value, keyName)
+		self:_replicateSlotValue(player, keyName)
+	end)
 end
 
 function SaveSlotService.Start(self: SaveSlotService)
@@ -100,6 +114,10 @@ function SaveSlotService.Start(self: SaveSlotService)
 	end))
 	self._maid:Add(Players.PlayerRemoving:Connect(function(player)
 		self._readyPromises[player] = nil
+		self._slotStateSequences[player] = nil
+		self._activeSlotDataSequences[player] = nil
+		self._replicatedActiveSlotIds[player] = nil
+		self._pendingSlotStateReplications[player] = nil
 	end))
 
 	SaveSlotNetwork.queries.getConfig.listen(function(_, _player: Player?)
@@ -107,6 +125,35 @@ function SaveSlotService.Start(self: SaveSlotService)
 			explicitSelection = self._explicitSelectionRequired,
 			maxSlotCount = self._maxSlotCount,
 		}
+	end)
+	SaveSlotNetwork.queries.getSlotState.listen(function(_, player: Player?)
+		if not player or not self._dataService:GetProfile(player) then
+			return SaveSlotSerializationUtils.serializeSlotState(0, {}, nil, nil)
+		end
+
+		return self:_getSlotStateBuffer(player)
+	end)
+	SaveSlotNetwork.queries.getActiveSlotData.listen(function(subscribe: boolean, player: Player?)
+		if not player or not self._dataService:GetProfile(player) then
+			return SaveSlotSerializationUtils.serializeActiveSlotData(0, nil, nil)
+		end
+
+		const slotId = self:_getActiveSlotIdNow(player)
+		const slotData = if slotId then self._dataService:GetValue(player, SaveSlotUtils.getSlotPath(slotId)) else nil
+		if subscribe then
+			self._replicatedActiveSlotIds[player] = slotId
+		end
+		return SaveSlotSerializationUtils.serializeActiveSlotData(
+			self._activeSlotDataSequences[player] or 0,
+			slotId,
+			TableUtils.deepCopy(slotData)
+		)
+	end)
+	SaveSlotNetwork.packets.activeSlotSubscriptionChanged.listen(function(isSubscribed: boolean, player: Player?)
+		if not player then
+			return
+		end
+		self._replicatedActiveSlotIds[player] = if isSubscribed then self:_getActiveSlotIdNow(player) else nil
 	end)
 	SaveSlotNetwork.queries.selectSlot.listen(function(slotId: string, player: Player?)
 		if not player then
@@ -679,6 +726,75 @@ function SaveSlotService.ObserveAtKey<T>(self: SaveSlotService, player: Player, 
 			return self._dataService:ObserveAtKey(player, SaveSlotUtils.getSlotPath(slotId, path))
 		end) :: any,
 	}) :: any
+end
+
+function SaveSlotService._getSlotStateBuffer(self: SaveSlotService, player: Player): buffer
+	return SaveSlotSerializationUtils.serializeSlotState(
+		self._slotStateSequences[player] or 0,
+		self:_getMetadataMap(player),
+		self:_getActiveSlotIdNow(player),
+		SaveSlotUtils.toOptionalSlotId(self._dataService:GetValue(player, SaveSlotConstants.LAST_ACTIVE_SLOT_ID_PATH))
+	)
+end
+
+function SaveSlotService._queueSlotStateReplication(self: SaveSlotService, player: Player)
+	self._slotStateSequences[player] = (self._slotStateSequences[player] or 0) + 1
+	if self._pendingSlotStateReplications[player] then
+		return
+	end
+
+	self._pendingSlotStateReplications[player] = true
+	task.defer(function()
+		if not self._maid or not self._pendingSlotStateReplications[player] then
+			return
+		end
+		self._pendingSlotStateReplications[player] = nil
+		if player.Parent ~= Players or not self._dataService:GetProfile(player) then
+			return
+		end
+
+		SaveSlotNetwork.packets.slotStateChanged.sendTo(self:_getSlotStateBuffer(player), player)
+	end)
+end
+
+function SaveSlotService._invalidateActiveSlotData(self: SaveSlotService, player: Player)
+	const sequence = (self._activeSlotDataSequences[player] or 0) + 1
+	self._activeSlotDataSequences[player] = sequence
+	const activeSlotId = self:_getActiveSlotIdNow(player)
+	if activeSlotId and self._replicatedActiveSlotIds[player] == activeSlotId then
+		SaveSlotNetwork.packets.activeSlotInvalidated.sendTo(sequence, player)
+	end
+end
+
+function SaveSlotService._replicateSlotValue(self: SaveSlotService, player: Player, keyName: string)
+	if keyName == SaveSlotConstants.ROOT_PATH then
+		self._replicatedActiveSlotIds[player] = nil
+		self:_queueSlotStateReplication(player)
+		self:_invalidateActiveSlotData(player)
+		return
+	end
+	if keyName == SaveSlotConstants.ACTIVE_SLOT_ID_PATH then
+		self._replicatedActiveSlotIds[player] = nil
+		self:_queueSlotStateReplication(player)
+		self:_invalidateActiveSlotData(player)
+		return
+	end
+
+	if keyName == SaveSlotConstants.SLOTS_PATH then
+		self:_invalidateActiveSlotData(player)
+		return
+	end
+
+	const slotsPrefix = SaveSlotConstants.SLOTS_PATH .. "."
+	if string.sub(keyName, 1, #slotsPrefix) == slotsPrefix then
+		const slotId = DataServiceUtils.splitValuePath(string.sub(keyName, #slotsPrefix + 1))
+		if slotId == self:_getActiveSlotIdNow(player) then
+			self:_invalidateActiveSlotData(player)
+		end
+		return
+	end
+
+	self:_queueSlotStateReplication(player)
 end
 
 function SaveSlotService._getMetadataMap(

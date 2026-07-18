@@ -54,7 +54,7 @@ export type DataService = typeof(setmetatable(
 		_attributeKeys: ObservableSet.ObservableSet<string>,
 		_hiddenKeys: ObservableSet.ObservableSet<string>,
 		_profileList: ObservableMap.ObservableMap<Player, ProfileStore.Profile<any>>,
-		_customReplicators: ObservableMap.ObservableMap<string, () -> ()>,
+		_customReplicators: ObservableMap.ObservableMap<string, (Player, any, string) -> ()>,
 		_valueChanged: Signal.Signal<Player, string, any>,
 
 		_lockedPlayers: { [Player]: true },
@@ -297,14 +297,19 @@ function DataService.GetStoreNameAndVersion(_self: DataService)
 end
 
 --[=[
-	Adds a custom replicator for the network, customizing how data is sent via the network
+	Adds a custom replicator for a profile path. The callback replaces ordinary
+	DataService replication for that path and all of its descendants. It also runs
+	for hidden paths, allowing a feature service to expose a narrower projection of
+	the hidden server data.
+
+	The callback receives the player, changed value, and exact changed path.
 
 	@within DataService
 	@param keyName string
-	@param callback function
-	@returns Symbol
+	@param callback (Player, any, string) -> ()
+	@returns string
 ]=]
-function DataService.AddReplicator(self: DataService, keyName: string, callback: () -> ()): string
+function DataService.AddReplicator(self: DataService, keyName: string, callback: (Player, any, string) -> ()): string
 	assert(t.string(keyName), "Bad keyName")
 	assert(t.callback(callback), "Bad callback")
 	self._customReplicators:Set(keyName, callback)
@@ -313,10 +318,10 @@ function DataService.AddReplicator(self: DataService, keyName: string, callback:
 end
 
 --[=[
-	Marks a key as hidden. Hidden keys live in the player's profile and save like
-	any other value, but never replicate -- the client is sent a blanked-out
-	placeholder of the same shape in its place, and later changes are not sent at
-	all.
+	Marks a key as hidden from ordinary DataService replication. Hidden keys live
+	in the player's profile and save like any other value. The client is sent a
+	blanked-out placeholder of the same shape, and later changes are withheld unless
+	a feature installs a narrower projection with [DataService.AddReplicator].
 
 	Set hidden keys before any profile loads. Hiding a key that has already
 	replicated does not retract the copy the client is holding.
@@ -475,21 +480,36 @@ function DataService.ReplicateValue(self: DataService, player: Player, keyName: 
 	-- client, but it is still the player's data and still observable here
 	self._valueChanged:Fire(player, keyName, keyValue)
 
-	if self:IsHiddenKey(keyName) then
-		return true
+	-- Prefer the most specific registered ancestor. This lets a feature own one
+	-- branch while still receiving path-level writes beneath it.
+	local customReplicator = self._customReplicators:Get(keyName)
+	local customReplicatorPathLength = if customReplicator then #keyName else 0
+	if not customReplicator then
+		for replicatorPath, candidate in self._customReplicators do
+			if
+				string.sub(keyName, 1, #replicatorPath + 1) == replicatorPath .. "."
+				and #replicatorPath > customReplicatorPathLength
+			then
+				customReplicator = candidate
+				customReplicatorPathLength = #replicatorPath
+			end
+		end
 	end
 
-	const customReplicator = self._customReplicators:Get(keyName)
 	if customReplicator then
 		const success, resultOrErr = (pcall :: any)(function(...)
 			return customReplicator(...)
-		end, player, keyValue)
+		end, player, keyValue, keyName)
 
 		if not success then
 			warn(`[DataService] - Failed while replicating {keyName:upper()} ({resultOrErr})`)
 			return false
 		end
 
+		return true
+	end
+
+	if self:IsHiddenKey(keyName) then
 		return true
 	end
 
