@@ -170,6 +170,8 @@ function GiftingService.Start(self: GiftingService): ()
 			{ Type = "positiveInteger", Name = "quantity", Description = "Optional quantity.", Optional = true },
 		},
 	}, function(context, players: { Player }, assetKey: string, quantity: number?)
+		local grantedCount = 0
+		const failures = {}
 		for _, player in players do
 			const granted, result = self:GiftAsync(player, assetKey, {
 				GiftedBy = context.Executor,
@@ -178,10 +180,17 @@ function GiftingService.Start(self: GiftingService): ()
 				Metadata = { Source = "Cmdr" },
 			}):Yield()
 			if not granted then
-				error(result)
+				table.insert(failures, `{player.Name}: {tostring(result)}`)
+			else
+				grantedCount += 1
 			end
 		end
-		return `Gifted {assetKey} to {#players} player(s).`
+		if #failures == 0 then
+			return `Gifted {assetKey} to {grantedCount} player(s).`
+		elseif grantedCount == 0 then
+			return `Could not gift {assetKey}: {table.concat(failures, "; ")}.`
+		end
+		return `Gifted {assetKey} to {grantedCount}; failed {#failures}: {table.concat(failures, "; ")}.`
 	end)
 
 	self._cmdrService:RegisterCommand({
@@ -200,16 +209,22 @@ function GiftingService.Start(self: GiftingService): ()
 		},
 	}, function(_, players: { Player }, assetKey: string, quantity: number?)
 		local removed = 0
+		local missing = 0
+		const failures = {}
 		for _, player in players do
 			const succeeded, didRemove = self:RemoveGiftAsync(player, assetKey, quantity):Yield()
 			if not succeeded then
-				error(didRemove)
-			end
-			if didRemove then
+				table.insert(failures, `{player.Name}: {tostring(didRemove)}`)
+			elseif didRemove then
 				removed += 1
+			else
+				missing += 1
 			end
 		end
-		return `Updated {removed} player gift record(s).`
+		if #failures > 0 then
+			return `Removed {removed}, not found for {missing}, failed {#failures}: {table.concat(failures, "; ")}.`
+		end
+		return `Removed {assetKey} from {removed} player(s); not found for {missing}.`
 	end)
 
 	self._cmdrService:RegisterCommand({
@@ -223,7 +238,7 @@ function GiftingService.Start(self: GiftingService): ()
 	}, function(_, player: Player, assetKey: string)
 		const succeeded, hasGift = self:HasGiftAsync(player, assetKey):Yield()
 		if not succeeded then
-			error(hasGift)
+			return `Could not check {player.Name}'s gift {assetKey}: {tostring(hasGift)}.`
 		end
 		return `{player.Name} {if hasGift then "has" else "does not have"} gift {assetKey}.`
 	end)
@@ -238,7 +253,7 @@ function GiftingService.Start(self: GiftingService): ()
 	}, function(_, player: Player)
 		const succeeded, gifts = self:GetGiftsAsync(player):Yield()
 		if not succeeded then
-			error(gifts)
+			return `Could not list {player.Name}'s gifts: {tostring(gifts)}.`
 		end
 		const keys = {}
 		for key, gift in gifts do

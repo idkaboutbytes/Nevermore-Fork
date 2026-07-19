@@ -65,16 +65,23 @@ function GameConfigCommandService.Start(self: GameConfigCommandService): ()
 		},
 	}, function(_context, players: { Player }, badgeIds: { number })
 		const awards = {}
+		const failures = {}
 		for _, player in players do
 			for _, badgeId in badgeIds do
 				const success, result = BadgeUtils.promiseAwardBadge(player, badgeId):Yield()
 				if not success then
-					error(result)
+					table.insert(failures, `{PlayerUtils.formatName(player)} badge {badgeId}: {tostring(result)}`)
+				else
+					table.insert(awards, `{PlayerUtils.formatName(player)} badge {badgeId}`)
 				end
-				table.insert(awards, `{PlayerUtils.formatName(player)} badge {badgeId}`)
 			end
 		end
-		return `Awarded: {table.concat(awards, ", ")}`
+		if #failures == 0 then
+			return `Awarded: {table.concat(awards, ", ")}.`
+		elseif #awards == 0 then
+			return `Could not award any badges: {table.concat(failures, "; ")}.`
+		end
+		return `Awarded {#awards}; failed {#failures}: {table.concat(failures, "; ")}.`
 	end)
 
 	self._cmdrService:RegisterCommand({
@@ -100,18 +107,39 @@ function GameConfigCommandService.Start(self: GameConfigCommandService): ()
 				Optional = true,
 			},
 		},
-	}, function(context, players: { Player }, placeId: number, jobId: string?)
-		assert(type(placeId) == "number" and placeId > 0, "Invalid place ID")
-		context:Reply("Commencing teleport...")
+	}, function(_context, players: { Player }, placeId: number, jobId: string?)
+		if type(placeId) ~= "number" or placeId <= 0 or placeId % 1 ~= 0 then
+			return `Could not teleport: {tostring(placeId)} is not a valid place ID.`
+		end
 
 		if jobId and jobId ~= "" and jobId ~= "-" then
+			local teleported = 0
+			const failures = {}
 			for _, player in players do
-				TeleportService:TeleportToPlaceInstance(placeId, jobId, player)
+				const succeeded, result = pcall(function()
+					TeleportService:TeleportToPlaceInstance(placeId, jobId, player)
+				end)
+				if succeeded then
+					teleported += 1
+				else
+					table.insert(failures, `{PlayerUtils.formatName(player)}: {tostring(result)}`)
+				end
 			end
+			if #failures == 0 then
+				return `Teleport requested for {teleported} player(s) to place {placeId}, server {jobId}.`
+			elseif teleported == 0 then
+				return `Could not teleport any players: {table.concat(failures, "; ")}.`
+			end
+			return `Teleport requested for {teleported}; failed {#failures}: {table.concat(failures, "; ")}.`
 		else
-			TeleportService:TeleportPartyAsync(placeId, players)
+			const succeeded, result = pcall(function()
+				TeleportService:TeleportPartyAsync(placeId, players)
+			end)
+			if not succeeded then
+				return `Could not teleport to place {placeId}: {tostring(result)}.`
+			end
+			return `Teleport requested for {#players} player(s) to place {placeId}.`
 		end
-		return "Teleported."
 	end)
 end
 

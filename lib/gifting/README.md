@@ -352,7 +352,9 @@ The server registers:
 - `list-gifts player`
 
 Cmdr grants record the executor as `GiftedBy`, add `Metadata.Source = "Cmdr"`, and bypass
-friend restrictions because Cmdr is already protected by the admin permission hook.
+friend restrictions because Cmdr is already protected by the admin permission hook. Every
+command returns a readable success, partial-success, or failure response instead of raising
+an execution error for an expected service failure.
 
 ## API summary
 

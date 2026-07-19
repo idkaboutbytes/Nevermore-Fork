@@ -203,7 +203,7 @@ function SaveSlotService.Start(self: SaveSlotService)
 		Run = function(_, player: Player)
 			const ready, readyError = self:ReadyAsync(player):Yield()
 			if not ready then
-				error(readyError)
+				return `Could not list {player.Name}'s save slots: {tostring(readyError)}.`
 			end
 			const activeSlotId = self:GetActiveSlotId(player)
 			const lines = {}
@@ -229,15 +229,15 @@ function SaveSlotService.Start(self: SaveSlotService)
 		Run = function(_, player: Player, slotIndex: number)
 			const ready, readyError = self:ReadyAsync(player):Yield()
 			if not ready then
-				error(readyError)
+				return `Could not select slot {slotIndex} for {player.Name}: {tostring(readyError)}.`
 			end
 			const slotId = self:GetSlotIdFromIndex(player, slotIndex)
 			if not slotId then
-				error(`Slot {slotIndex} does not exist`)
+				return `Could not select slot {slotIndex} for {player.Name}: the slot does not exist.`
 			end
 			const selected, selectError = self:SelectSlotAsync(player, slotId):Yield()
 			if not selected then
-				error(selectError)
+				return `Could not select slot {slotIndex} for {player.Name}: {tostring(selectError)}.`
 			end
 			return `Selected slot {slotIndex} for {player.Name}.`
 		end,
@@ -253,7 +253,7 @@ function SaveSlotService.Start(self: SaveSlotService)
 		Run = function(_, player: Player, slotIndex: number)
 			const created, slotIdOrError = self:CreateSlotAsync(player, slotIndex):Yield()
 			if not created then
-				error(slotIdOrError)
+				return `Could not create slot {slotIndex} for {player.Name}: {tostring(slotIdOrError)}.`
 			end
 			return `Created slot {slotIndex} ({slotIdOrError}) for {player.Name}.`
 		end,
@@ -269,15 +269,15 @@ function SaveSlotService.Start(self: SaveSlotService)
 		Run = function(_, player: Player, slotIndex: number)
 			const ready, readyError = self:ReadyAsync(player):Yield()
 			if not ready then
-				error(readyError)
+				return `Could not delete slot {slotIndex} for {player.Name}: {tostring(readyError)}.`
 			end
 			const slotId = self:GetSlotIdFromIndex(player, slotIndex)
 			if not slotId then
-				error(`Slot {slotIndex} does not exist`)
+				return `Could not delete slot {slotIndex} for {player.Name}: the slot does not exist.`
 			end
 			const deleted, deleteError = self:DeleteSlotAsync(player, slotId):Yield()
 			if not deleted then
-				error(deleteError)
+				return `Could not delete slot {slotIndex} for {player.Name}: {tostring(deleteError)}.`
 			end
 			return `Deleted slot {slotIndex} for {player.Name}.`
 		end,

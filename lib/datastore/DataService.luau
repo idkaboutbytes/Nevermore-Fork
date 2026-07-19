@@ -96,25 +96,25 @@ function DataService.Start(self: DataService)
 		self.DataStore = self.DataStore.Mock :: any
 	end
 
-	local function getCommandProfile(player: Player): ProfileStore.Profile<any>
+	local function getCommandProfile(player: Player): (boolean, any)
 		const loaded, profileOrError = self:PromiseProfile(player):Yield()
 		if not loaded then
-			error(tostring(profileOrError))
+			return false, tostring(profileOrError)
 		end
 
 		const profile = profileOrError :: ProfileStore.Profile<any>
 		if not profile:IsActive() then
-			error(`Profile is not active for {player.Name}`)
+			return false, `Profile is not active for {player.Name}`
 		end
-		return profile
+		return true, profile
 	end
 
-	local function encodeCommandValue(value: any): string
+	local function encodeCommandValue(value: any): (boolean, string)
 		const encoded, resultOrError = (pcall :: any)(HttpService.JSONEncode, HttpService, value)
 		if not encoded then
-			error(`Data cannot be displayed as JSON: {resultOrError}`)
+			return false, `Data cannot be displayed as JSON: {resultOrError}`
 		end
-		return resultOrError :: string
+		return true, resultOrError :: string
 	end
 
 	local function decodeCommandValue(serializedValue: string): any
@@ -140,14 +140,22 @@ function DataService.Start(self: DataService)
 			},
 		},
 		Run = function(_, player: Player, path: string?)
-			const profile = getCommandProfile(player)
+			const loaded, profileOrError = getCommandProfile(player)
+			if not loaded then
+				return `Could not read {player.Name}'s data: {tostring(profileOrError)}.`
+			end
+			const profile = profileOrError :: ProfileStore.Profile<any>
 			const hasPath = type(path) == "string" and path ~= ""
 			const value = if hasPath then DataServiceUtils.readValuePath(profile.Data, path :: string) else profile.Data
 			if value == nil then
 				return `{player.Name}.{path} = nil (path does not exist)`
 			end
 
-			return `{player.Name}.{if hasPath then path else "Data"} = {encodeCommandValue(value)}`
+			const encoded, encodedValue = encodeCommandValue(value)
+			if not encoded then
+				return `Could not read {player.Name}.{if hasPath then path else "Data"}: {encodedValue}.`
+			end
+			return `{player.Name}.{if hasPath then path else "Data"} = {encodedValue}`
 		end,
 	})
 
@@ -175,38 +183,55 @@ function DataService.Start(self: DataService)
 		Run = function(_, player: Player, path: string, serializedValue: string)
 			const newValue = decodeCommandValue(serializedValue)
 			if newValue == nil then
-				error("JSON null cannot be written to profile data")
+				return "Could not write data: JSON null cannot be written to profile data."
 			end
 
-			const profile = getCommandProfile(player)
+			const loaded, profileOrError = getCommandProfile(player)
+			if not loaded then
+				return `Could not write {player.Name}.{path}: {tostring(profileOrError)}.`
+			end
+			const profile = profileOrError :: ProfileStore.Profile<any>
 			const candidateData = TableUtils.deepCopy(profile.Data)
 			const wroteValue, writeError = pcall(DataServiceUtils.writeValuePath, candidateData, path, newValue)
 			if not wroteValue then
-				error(`Cannot write data path {path}: {writeError}`)
+				return `Could not write {player.Name}.{path}: {tostring(writeError)}.`
 			end
 
 			const cursor = Squash.cursor()
 			const isValid, validationError = pcall(self._profileData.Schema.ser, cursor, candidateData)
 			if not isValid then
-				error(`New value does not match {DataServiceProfile.GetName()}.Schema: {validationError}`)
+				return `Could not write {player.Name}.{path}: value does not match {DataServiceProfile.GetName()}.Schema ({tostring(
+					validationError
+				)}).`
 			end
 			const validationCursor = Squash.frombuffer(Squash.tobuffer(cursor))
 			const decoded, schemaDataOrError = pcall(self._profileData.Schema.des, validationCursor)
 			if not decoded then
-				error(`{DataServiceProfile.GetName()}.Schema could not read the validated value: {schemaDataOrError}`)
+				return `Could not write {player.Name}.{path}: {DataServiceProfile.GetName()}.Schema could not read the validated value ({tostring(
+					schemaDataOrError
+				)}).`
 			end
 			if DataServiceUtils.readValuePath(schemaDataOrError, path) == nil then
-				error(`Data path {path} is not represented by {DataServiceProfile.GetName()}.Schema`)
+				return `Could not write {player.Name}.{path}: path is not represented by {DataServiceProfile.GetName()}.Schema.`
 			end
 
 			const resolvedValue = DataServiceUtils.readValuePath(candidateData, path)
-			self:SetValue(player, path, resolvedValue)
+			const setValue, setError = pcall(function()
+				self:SetValue(player, path, resolvedValue)
+			end)
+			if not setValue then
+				return `Could not write {player.Name}.{path}: {tostring(setError)}.`
+			end
 			const saved, saveError = self:SaveProfile(player):Yield()
 			if not saved then
-				error(`Data changed in memory but the immediate save failed: {saveError}`)
+				return `Updated {player.Name}.{path} in memory, but the immediate save failed: {tostring(saveError)}.`
 			end
 
-			return `Set {player.Name}.{path} = {encodeCommandValue(resolvedValue)}`
+			const encoded, encodedValue = encodeCommandValue(resolvedValue)
+			if not encoded then
+				return `Set {player.Name}.{path}, but could not display the new value: {encodedValue}.`
+			end
+			return `Set {player.Name}.{path} = {encodedValue}`
 		end,
 	})
 
@@ -222,10 +247,13 @@ function DataService.Start(self: DataService)
 			},
 		},
 		Run = function(_, player: Player)
-			getCommandProfile(player)
+			const loaded, profileOrError = getCommandProfile(player)
+			if not loaded then
+				return `Could not reset {player.Name}'s data: {tostring(profileOrError)}.`
+			end
 			const reset, resetError = self:DeleteProfileAsync(player):Yield()
 			if not reset then
-				error(resetError)
+				return `Could not reset {player.Name}'s data: {tostring(resetError)}.`
 			end
 
 			return `Reset {player.Name}'s data. They must rejoin to load the defaults.`

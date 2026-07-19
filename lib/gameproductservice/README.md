@@ -209,7 +209,9 @@ The server registers:
 - `prompt-pass players pass`
 
 The `product` and `gamepass` Cmdr argument types fuzzy-search configured GameConfig
-keys and parse the selected key into its underlying ID. Raw numeric IDs also work.
+keys and parse the selected key into its underlying ID. Raw numeric IDs also work. Prompt
+commands return per-player failures as their Cmdr response instead of raising an execution
+error.
 
 ## API summary
 

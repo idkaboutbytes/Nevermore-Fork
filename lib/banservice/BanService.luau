@@ -62,7 +62,7 @@ function BanService.Init(self: BanService, serviceBag: ServiceBag.ServiceBag)
 		Run = function(_, target: Player)
 			const success, resultOrError = self:BanPermanentlyAsync(target):Yield()
 			if not success then
-				error(resultOrError)
+				return `Could not permanently ban {target.Name}: {tostring(resultOrError)}.`
 			end
 
 			return `Permanently banned {target.Name}.`
@@ -88,7 +88,7 @@ function BanService.Init(self: BanService, serviceBag: ServiceBag.ServiceBag)
 		Run = function(_, target: Player, seconds: number)
 			const success, resultOrError = self:BanDurationAsync(target, seconds):Yield()
 			if not success then
-				error(resultOrError)
+				return `Could not ban {target.Name} for {seconds} seconds: {tostring(resultOrError)}.`
 			end
 
 			return `Banned {target.Name} for {seconds} seconds.`

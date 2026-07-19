@@ -169,10 +169,37 @@ function GameProductService.Start(self: GameProductService): ()
 			{ Type = "product", Name = "product", Description = "Configured product key or ID." },
 		},
 	}, function(_, players: { Player }, productId: number)
+		local prompted = 0
+		const failures = {}
 		for _, player in players do
-			self:PromptPurchaseAsync(player, GameConfigAssetTypes.PRODUCT, productId):Catch(warn)
+			if self:IsPromptOpen(player) then
+				table.insert(failures, `{player.Name}: another purchase prompt is already open`)
+				continue
+			end
+			const called, promptOrError = pcall(function()
+				return self:PromptPurchaseAsync(player, GameConfigAssetTypes.PRODUCT, productId)
+			end)
+			if not called then
+				table.insert(failures, `{player.Name}: {tostring(promptOrError)}`)
+				continue
+			end
+			const prompt = promptOrError :: Promise.Promise<boolean>
+			if prompt:IsRejected() then
+				local _, reason = prompt:GetResults()
+				table.insert(failures, `{player.Name}: {tostring(reason)}`)
+				continue
+			end
+			prompted += 1
+			prompt:Catch(function(reason)
+				warn(`[GameProductService] - Product prompt for {player.Name} ended with: {reason}`)
+			end)
 		end
-		return `Prompted {#players} player(s) for product {productId}.`
+		if #failures == 0 then
+			return `Opened product {productId} prompt for {prompted} player(s).`
+		elseif prompted == 0 then
+			return `Could not open any product prompts: {table.concat(failures, "; ")}.`
+		end
+		return `Opened {prompted} product prompt(s); failed {#failures}: {table.concat(failures, "; ")}.`
 	end)
 
 	self._cmdrService:RegisterCommand({
@@ -184,10 +211,37 @@ function GameProductService.Start(self: GameProductService): ()
 			{ Type = "gamepass", Name = "pass", Description = "Configured pass key or ID." },
 		},
 	}, function(_, players: { Player }, passId: number)
+		local prompted = 0
+		const failures = {}
 		for _, player in players do
-			self:PromptPurchaseAsync(player, GameConfigAssetTypes.PASS, passId):Catch(warn)
+			if self:IsPromptOpen(player) then
+				table.insert(failures, `{player.Name}: another purchase prompt is already open`)
+				continue
+			end
+			const called, promptOrError = pcall(function()
+				return self:PromptPurchaseAsync(player, GameConfigAssetTypes.PASS, passId)
+			end)
+			if not called then
+				table.insert(failures, `{player.Name}: {tostring(promptOrError)}`)
+				continue
+			end
+			const prompt = promptOrError :: Promise.Promise<boolean>
+			if prompt:IsRejected() then
+				local _, reason = prompt:GetResults()
+				table.insert(failures, `{player.Name}: {tostring(reason)}`)
+				continue
+			end
+			prompted += 1
+			prompt:Catch(function(reason)
+				warn(`[GameProductService] - Pass prompt for {player.Name} ended with: {reason}`)
+			end)
 		end
-		return `Prompted {#players} player(s) for pass {passId}.`
+		if #failures == 0 then
+			return `Opened game-pass {passId} prompt for {prompted} player(s).`
+		elseif prompted == 0 then
+			return `Could not open any game-pass prompts: {table.concat(failures, "; ")}.`
+		end
+		return `Opened {prompted} game-pass prompt(s); failed {#failures}: {table.concat(failures, "; ")}.`
 	end)
 end
 
