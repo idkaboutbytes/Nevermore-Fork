@@ -39,6 +39,55 @@ function GameConfigCmdrUtils.registerAssetTypes(cmdr: any, configPicker: GameCon
 	for alias, typeName in ASSET_TYPE_ALIASES do
 		cmdr.Registry:RegisterTypeAlias(alias, typeName)
 	end
+
+	GameConfigCmdrUtils.registerGiftAssetKeyType(cmdr, configPicker)
+end
+
+--[=[
+	Registers a Cmdr type for keys shared by configured products and passes.
+
+	@within GameConfigCmdrUtils
+	@param cmdr any
+	@param configPicker GameConfigPicker
+]=]
+function GameConfigCmdrUtils.registerGiftAssetKeyType(cmdr: any, configPicker: GameConfigPicker.GameConfigPicker): ()
+	const assetTypes = { GameConfigAssetTypes.PRODUCT, GameConfigAssetTypes.PASS }
+	const getAssetKeys = function(): { string }
+		const assetKeys = {}
+		const seenKeys = {}
+		for _, assetType in assetTypes do
+			for _, asset in configPicker:GetAllActiveAssetsOfType(assetType) do
+				const assetKey = asset:GetAssetKey()
+				if not seenKeys[assetKey] then
+					seenKeys[assetKey] = true
+					table.insert(assetKeys, assetKey)
+				end
+			end
+		end
+		table.sort(assetKeys)
+		return assetKeys
+	end
+
+	const assetKeyDefinition = {
+		Transform = function(text: string)
+			return cmdr.Util.MakeFuzzyFinder(getAssetKeys())(text)
+		end,
+		Validate = function(values)
+			return #values > 0, "No product or pass with that key could be found."
+		end,
+		Autocomplete = function(values)
+			const results = {}
+			for _, value in values do
+				table.insert(results, tostring(value))
+			end
+			return results
+		end,
+		Parse = function(values): string?
+			return values[1]
+		end,
+	}
+
+	cmdr.Registry:RegisterType("giftAssetKey", assetKeyDefinition)
 end
 
 --[=[

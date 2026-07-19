@@ -166,7 +166,7 @@ function GiftingService.Start(self: GiftingService): ()
 		Group = "Gifting",
 		Args = {
 			{ Type = "players", Name = "players", Description = "Gift recipients." },
-			{ Type = "string", Name = "assetKey", Description = "Configured pass or product key." },
+			{ Type = "giftAssetKey", Name = "assetKey", Description = "Configured pass or product key." },
 			{ Type = "positiveInteger", Name = "quantity", Description = "Optional quantity.", Optional = true },
 		},
 	}, function(context, players: { Player }, assetKey: string, quantity: number?)
