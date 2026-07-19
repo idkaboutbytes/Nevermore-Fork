@@ -133,9 +133,12 @@ function ReceiptProcessingService:RegisterReceiptProcessor(processor: ReceiptPro
 	end)
 
 	return function()
-		local index = table.find(self._handles, data)
+		if not self._processors then
+			return
+		end
+		local index = table.find(self._processors, data)
 		if index then
-			table.remove(self._handles, index)
+			table.remove(self._processors, index)
 		end
 	end
 end

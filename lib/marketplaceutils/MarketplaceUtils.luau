@@ -4,10 +4,10 @@
 	@class MarketplaceUtils
 ]=]
 
-local MarketplaceService = game:GetService('MarketplaceService')
+local MarketplaceService = game:GetService("MarketplaceService")
 const require = require("../Loader").load()
 
-local Promise = require('Promise')
+local Promise = require("Promise")
 
 local MarketplaceUtils = {}
 
@@ -100,6 +100,17 @@ export type GamePassOrDeveloperProductInfo = {
 }
 
 --[=[
+	Product information returned for an experience subscription.
+
+	Roblox documents this result as a dictionary and may add fields over time, so
+	the value remains intentionally open-ended.
+
+	@interface SubscriptionProductInfo
+	@within MarketplaceUtils
+]=]
+export type SubscriptionProductInfo = { [string]: any }
+
+--[=[
 	Subscription Status
 
 	@interface UserSubscriptonStatus
@@ -122,8 +133,8 @@ function MarketplaceUtils.promiseProductInfo(
 	assetId: number,
 	infoType: Enum.InfoType
 ): Promise.Promise<AssetProductInfo | GamePassOrDeveloperProductInfo>
-	assert(type(assetId) == 'number', 'Bad assetId')
-	assert(typeof(infoType) == 'EnumItem' or infoType == nil, 'Bad infoType')
+	assert(type(assetId) == "number", "Bad assetId")
+	assert(typeof(infoType) == "EnumItem" or infoType == nil, "Bad infoType")
 
 	return Promise.spawn(function(resolve, reject)
 		-- We hope this caches
@@ -134,8 +145,34 @@ function MarketplaceUtils.promiseProductInfo(
 		if not ok then
 			return reject(err)
 		end
-		if type(productInfo) ~= 'table' then
-			return reject('Bad productInfo type')
+		if type(productInfo) ~= "table" then
+			return reject("Bad productInfo type")
+		end
+		return resolve(productInfo)
+	end)
+end
+
+--[=[
+	Retrieves product information for an experience subscription.
+
+	@param subscriptionId string
+	@return Promise<SubscriptionProductInfo>
+]=]
+function MarketplaceUtils.promiseSubscriptionProductInfo(
+	subscriptionId: string
+): Promise.Promise<SubscriptionProductInfo>
+	assert(type(subscriptionId) == "string" and subscriptionId ~= "", "Bad subscriptionId")
+
+	return Promise.spawn(function(resolve, reject)
+		local productInfo
+		local ok, err = pcall(function()
+			productInfo = MarketplaceService:GetSubscriptionProductInfoAsync(subscriptionId)
+		end)
+		if not ok then
+			return reject(err)
+		end
+		if type(productInfo) ~= "table" then
+			return reject("Bad subscription product info type")
 		end
 		return resolve(productInfo)
 	end)
@@ -152,8 +189,8 @@ function MarketplaceUtils.promiseUserSubscriptionStatus(
 	player: Player,
 	subscriptionId: string
 ): Promise.Promise<UserSubscriptonStatus>
-	assert(typeof(player) == 'Instance' and player:IsA('Player'), 'Bad player')
-	assert(type(subscriptionId) == 'string', 'Bad subscriptionId')
+	assert(typeof(player) == "Instance" and player:IsA("Player"), "Bad player")
+	assert(type(subscriptionId) == "string", "Bad subscriptionId")
 
 	return Promise.spawn(function(resolve, reject)
 		local subStatus
@@ -163,8 +200,8 @@ function MarketplaceUtils.promiseUserSubscriptionStatus(
 		if not ok then
 			return reject(err)
 		end
-		if type(subStatus) ~= 'table' then
-			return reject('Bad subStatus type')
+		if type(subStatus) ~= "table" then
+			return reject("Bad subStatus type")
 		end
 		return resolve(subStatus)
 	end)
@@ -177,8 +214,8 @@ end
 	@return Promise<boolean>
 ]=]
 function MarketplaceUtils.promiseUserOwnsGamePass(userId: number, gamePassId: number): Promise.Promise<boolean>
-	assert(typeof(userId) == 'number', 'Bad userId')
-	assert(type(gamePassId) == 'number', 'Bad gamePassId')
+	assert(typeof(userId) == "number", "Bad userId")
+	assert(type(gamePassId) == "number", "Bad gamePassId")
 
 	return Promise.spawn(function(resolve, reject)
 		local result
@@ -188,8 +225,8 @@ function MarketplaceUtils.promiseUserOwnsGamePass(userId: number, gamePassId: nu
 		if not ok then
 			return reject(err)
 		end
-		if type(result) ~= 'boolean' then
-			return reject('Bad result type')
+		if type(result) ~= "boolean" then
+			return reject("Bad result type")
 		end
 		return resolve(result)
 	end)
@@ -202,8 +239,8 @@ end
 	@return Promise<boolean>
 ]=]
 function MarketplaceUtils.promisePlayerOwnsAsset(player: Player, assetId: number): Promise.Promise<boolean>
-	assert(typeof(player) == 'Instance', 'Bad player')
-	assert(type(assetId) == 'number', 'Bad assetId')
+	assert(typeof(player) == "Instance", "Bad player")
+	assert(type(assetId) == "number", "Bad assetId")
 
 	return Promise.spawn(function(resolve, reject)
 		local result
@@ -213,8 +250,8 @@ function MarketplaceUtils.promisePlayerOwnsAsset(player: Player, assetId: number
 		if not ok then
 			return reject(err)
 		end
-		if type(result) ~= 'boolean' then
-			return reject('Bad result type')
+		if type(result) ~= "boolean" then
+			return reject("Bad result type")
 		end
 		return resolve(result)
 	end)
@@ -227,8 +264,8 @@ end
 	@return Promise<boolean>
 ]=]
 function MarketplaceUtils.promisePlayerOwnsBundle(player: Player, bundleId: number): Promise.Promise<boolean>
-	assert(typeof(player) == 'Instance', 'Bad player')
-	assert(type(bundleId) == 'number', 'Bad bundleId')
+	assert(typeof(player) == "Instance", "Bad player")
+	assert(type(bundleId) == "number", "Bad bundleId")
 
 	return Promise.spawn(function(resolve, reject)
 		local result
@@ -238,8 +275,8 @@ function MarketplaceUtils.promisePlayerOwnsBundle(player: Player, bundleId: numb
 		if not ok then
 			return reject(err)
 		end
-		if type(result) ~= 'boolean' then
-			return reject('Bad result type')
+		if type(result) ~= "boolean" then
+			return reject("Bad result type")
 		end
 		return resolve(result)
 	end)

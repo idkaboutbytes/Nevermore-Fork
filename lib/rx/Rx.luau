@@ -2,6 +2,7 @@
 
 const require = require("../Loader").load()
 
+local CancelToken = require("CancelToken")
 local Maid = require("Maid")
 local MaidTaskUtils = require("MaidTaskUtils")
 local Observable = require("Observable")
@@ -219,6 +220,8 @@ function Rx.fromPromise<T...>(promise: Promise.Promise<T...>): Observable.Observ
 			else
 				sub:Fail(table.unpack(results, 2, results.n))
 			end
+
+			return
 		end
 
 		return task.spawn(function()
@@ -232,6 +235,47 @@ function Rx.fromPromise<T...>(promise: Promise.Promise<T...>): Observable.Observ
 			end
 		end)
 	end)
+end
+
+--[=[
+	Converts the first value emitted by an observable into a promise. The promise
+	rejects if the observable fails, completes without emitting, or the optional
+	cancellation token is cancelled.
+
+	@param observable Observable<T>
+	@param cancelToken CancelToken?
+	@return Promise<T>
+]=]
+function Rx.toPromise<T...>(
+	observable: Observable.Observable<T...>,
+	cancelToken: CancelToken.CancelToken?
+): Promise.Promise<T...>
+	assert(Observable.isObservable(observable), "Bad observable")
+	assert(cancelToken == nil or CancelToken.isCancelToken(cancelToken), "Bad cancelToken")
+
+	local maid = Maid.new()
+	local promise = Promise.new(function(resolve, reject)
+		if cancelToken then
+			if cancelToken:IsCancelled() then
+				reject("Cancelled")
+				return
+			end
+
+			maid:GiveTask(cancelToken.Cancelled:Connect(function()
+				reject("Cancelled")
+			end))
+		end
+
+		maid:GiveTask(observable:Subscribe(resolve, reject, function()
+			reject("Observable completed without emitting")
+		end))
+	end)
+
+	promise:Finally(function()
+		maid:DoCleaning()
+	end)
+
+	return promise
 end
 
 --[=[
