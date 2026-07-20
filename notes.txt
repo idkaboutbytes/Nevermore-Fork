@@ -1,0 +1,43 @@
+Requiring other services within a service always has to be within the 'Init' method
+Services should be registered in the export type, e.g: _someService: SomeService.SomeService
+
+If a service/class starts too become too cluttered, refer to making multiple support modules for that one module, e.g:
+
+CoinService: It picks up coins, watches coins, spawns coins
+That would be turned into
+
+CoinService, registers other modules
+CoinPickupService, picks up the coins
+CoinObserveService, watches the coins
+CoinSpawnService, spawns the coins
+
+Same applies to classes, lets use quests as an example:
+
+Quest [The Main Class], it creates quests for player, tracks quests for plaeyr, updates quests for player
+That would be turned into
+
+Quest, registers and keep the main methods
+QuestTrackerModel
+QuestCreatorModel
+QuestUpdateModel
+
+(Take a look at AdorneeData, it's a good example)
+
+Next
+
+## Formatting
+
+- Always use the t package for Assertions
+- Modules should never be required within a function, always at the top or when .new (for classes) or :Init  (services) is called
+- Always use moonwave doc comments to public methods, but never on :Init, :Start, :Destroy or .new
+- Destroy is always the bottom method (services & classes)
+- Init, Start and .new are always the top methods
+- Init, Start and .new should never be documented
+- Classes & Services should always export their types properly
+
+## Modules
+
+- Before creating a module, always check to see the available packages in lib, doing so will give the user the best experience
+- Make sure to implement the right packages for what you're creating
+- Always be sure it's optimized and revised once you're done creating it
+- Ask yourself, is this formatted? Is this messy? Can the user read it? Is it optimized? Can I shorten it with a utils module?
