@@ -6,18 +6,27 @@
 	@class ScreenGuiService
 ]=]
 
-local RunService = game:GetService('RunService')
+local RunService = game:GetService("RunService")
 const require = require("../Loader").load()
 
-local Maid = require('Maid')
-local Observable = require('Observable')
-local PlayerGuiUtils = require('PlayerGuiUtils')
-local ServiceBag = require('ServiceBag')
-local ValueObject = require('ValueObject')
+local Maid = require("Maid")
+local Observable = require("Observable")
+local PlayerGuiUtils = require("PlayerGuiUtils")
+local ServiceBag = require("ServiceBag")
+local ValueObject = require("ValueObject")
 
 local ScreenGuiService = {}
-ScreenGuiService.ServiceName = 'ScreenGuiService'
+ScreenGuiService.ServiceName = "ScreenGuiService"
 ScreenGuiService._hackPlayerGui = nil :: any?
+
+export type ScreenGuiService = typeof(setmetatable(
+	{} :: {
+		_serviceBag: ServiceBag.ServiceBag,
+		_maid: Maid.Maid,
+		_guiParent: ValueObject.ValueObject<Instance?>,
+	},
+	{} :: typeof({ __index = ScreenGuiService })
+))
 
 --[=[
 	Initializes the ScreenGuiService
@@ -25,8 +34,8 @@ ScreenGuiService._hackPlayerGui = nil :: any?
 	@param serviceBag ServiceBag
 ]=]
 function ScreenGuiService:Init(serviceBag: ServiceBag.ServiceBag)
-	assert(not self._serviceBag, 'Already initialized')
-	self._serviceBag = assert(serviceBag, 'No serviceBag')
+	assert(not self._serviceBag, "Already initialized")
+	self._serviceBag = assert(serviceBag, "No serviceBag")
 
 	self:_ensureInit()
 end
@@ -72,7 +81,7 @@ function ScreenGuiService:ObservePlayerGui(): Observable.Observable<ScreenGui?>
 end
 
 function ScreenGuiService:_ensureInit()
-	assert(self ~= ScreenGuiService, 'Cannot call directly, use serviceBag')
+	assert(self ~= ScreenGuiService, "Cannot call directly, use serviceBag")
 
 	if not self._maid then
 		self._maid = Maid.new()

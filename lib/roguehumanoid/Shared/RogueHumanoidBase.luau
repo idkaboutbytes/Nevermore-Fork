@@ -61,29 +61,28 @@ function RogueHumanoidBase.new(humanoid: Humanoid, serviceBag: ServiceBag.Servic
 		minSize = self._properties.ScaleMin:Observe(),
 	})) :: any)
 
-	self._maid:Add(RxCharacterUtils.observeIsOfLocalCharacterBrio(self._obj):Subscribe(function(brio)
-		if brio:IsDead() then
-			return
-		end
+	if RunService:IsClient() then
+		self._maid:Add(RxCharacterUtils.observeIsOfLocalCharacterBrio(self._obj):Subscribe(function(brio)
+			if brio:IsDead() then
+				return
+			end
 
-		const maid = brio:ToMaid()
-		maid:Add(self._properties.WalkSpeed:Observe():Subscribe(function(walkSpeed)
-			self._obj.WalkSpeed = walkSpeed
-		end))
-		maid:Add(self._properties.CharacterUseJumpPower:Observe():Subscribe(function(useJumpPower)
-			self._obj.UseJumpPower = useJumpPower
-		end))
-		maid:Add(self._properties.JumpPower:Observe():Subscribe(function(jumpPower)
-			self._obj.JumpPower = jumpPower
-		end))
-		maid:Add(self._properties.JumpHeight:Observe():Subscribe(function(jumpHeight)
-			self._obj.JumpHeight = jumpHeight
-		end))
-
-		if RunService:IsClient() then
+			const maid = brio:ToMaid()
+			maid:Add(self._properties.WalkSpeed:Observe():Subscribe(function(walkSpeed)
+				self._obj.WalkSpeed = walkSpeed
+			end))
+			maid:Add(self._properties.CharacterUseJumpPower:Observe():Subscribe(function(useJumpPower)
+				self._obj.UseJumpPower = useJumpPower
+			end))
+			maid:Add(self._properties.JumpPower:Observe():Subscribe(function(jumpPower)
+				self._obj.JumpPower = jumpPower
+			end))
+			maid:Add(self._properties.JumpHeight:Observe():Subscribe(function(jumpHeight)
+				self._obj.JumpHeight = jumpHeight
+			end))
 			self:_setupIgnoreCFrameChangesOnScaleChange(maid)
-		end
-	end))
+		end))
+	end
 
 	self._maid:Add(self._properties.MaxHealth:Observe():Subscribe(function(maxHealth)
 		const newMaxHealth = math.max(maxHealth, 1)

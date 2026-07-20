@@ -30,7 +30,7 @@ local SecretService = {}
 SecretService.ServiceName = "SecretService"
 SecretService.ServerOnly = true
 
-type SecretServiceClass = typeof(setmetatable(
+export type SecretService = typeof(setmetatable(
 	{} :: {
 		_serviceBag: ServiceBag.ServiceBag,
 		_maid: Maid.Maid,
@@ -48,8 +48,6 @@ type SecretServiceClass = typeof(setmetatable(
 	},
 	{} :: typeof({ __index = SecretService })
 ))
-
-export type SecretService = SecretServiceClass
 
 local function sortKeys(map: { [string]: any }): { string }
 	local keys = {}
