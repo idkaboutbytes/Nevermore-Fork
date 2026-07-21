@@ -291,7 +291,7 @@ end
 function InputKeyMapList.ObserveInputEnumsListBrio(
 	self: InputKeyMapList
 ): Observable.Observable<Brio.Brio<InputTypeUtils.InputType>>
-	return (self:_ensureInputTypesForBinding():ObserveItemsBrio() :: any):Pipe({
+	return (self:_ensureInputTypesForBinding():ObserveKeysList() :: any):Pipe({
 		RxBrioUtils.where(function(value)
 			return InputTypeUtils.isKnownInputType(value)
 		end),
