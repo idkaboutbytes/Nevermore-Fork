@@ -7,9 +7,9 @@
 	@class PromiseInstanceUtils
 ]=]
 
-const require = require("../Loader").load()
+const require = require("../../Loader").load()
 
-local Promise = require('Promise')
+local Promise = require("Promise")
 
 local PromiseInstanceUtils = {}
 
