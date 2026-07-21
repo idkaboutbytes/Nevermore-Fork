@@ -224,7 +224,7 @@ function InputKeyMapList.ObserveInputKeyMapForInputMode(
 	inputModeType: InputModeType.InputModeType
 ): Observable.Observable<InputKeyMap.InputKeyMap?>
 	assert(InputModeType.isInputModeType(inputModeType), "Bad inputModeType")
-	return self._inputModeTypeToInputKeyMap:ObserveKey(inputModeType)
+	return self._inputModeTypeToInputKeyMap:ObserveValueForKey(inputModeType)
 end
 
 --[=[
