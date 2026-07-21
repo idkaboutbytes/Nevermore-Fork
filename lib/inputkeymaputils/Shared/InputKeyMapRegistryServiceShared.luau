@@ -1,25 +1,25 @@
 --!strict
 --[=[
-	Centralized service for registering and looking up InputKeyMapLists across providers.
+	Provides retrieval of input key maps across the game. Available on both the client and the server.
+
+	Input key maps are needed on the server to bind datastore settings.
 
 	@class InputKeyMapRegistryServiceShared
 ]=]
 
-const require = require("../../Loader").load()
+local RunService = game:GetService("RunService")
+local require = require("../../Loader").load()
 
-const RunService = game:GetService("RunService")
+local Brio = require("Brio")
+local InputKeyMapList = require("InputKeyMapList")
+local Maid = require("Maid")
+local Observable = require("Observable")
+local ObservableList = require("ObservableList")
+local Rx = require("Rx")
+local RxBrioUtils = require("RxBrioUtils")
+local ServiceBag = require("ServiceBag")
 
-const Brio = require("Brio")
-const InputKeyMapList = require("InputKeyMapList")
-const Maid = require("Maid")
-const Observable = require("Observable")
-const ObservableList = require("ObservableList")
-const Rx = require("Rx")
-const RxBrioUtils = require("RxBrioUtils")
-const ServiceBag = require("ServiceBag")
-const t = require("t")
-
-const InputKeyMapRegistryServiceShared = {}
+local InputKeyMapRegistryServiceShared = {}
 InputKeyMapRegistryServiceShared.ServiceName = "InputKeyMapRegistryServiceShared"
 
 export type InputKeyMapRegistryServiceShared = typeof(setmetatable(
@@ -37,10 +37,9 @@ function InputKeyMapRegistryServiceShared.Init(
 	serviceBag: ServiceBag.ServiceBag
 ): ()
 	assert(not (self :: any)._serviceBag, "Already initialized")
-	assert(t.table(serviceBag), "Bad serviceBag")
-
-	self._serviceBag = serviceBag
+	self._serviceBag = assert(serviceBag, "No serviceBag")
 	self._maid = Maid.new()
+
 	self._providerLookupByName = {}
 
 	self._providersList = ObservableList.new()
@@ -51,9 +50,10 @@ function InputKeyMapRegistryServiceShared.Init(
 			return
 		end
 
-		const maid = brio:ToMaid()
-		const provider = brio:GetValue()
-		const providerName = provider:GetProviderName()
+		local maid = brio:ToMaid()
+		local provider = brio:GetValue()
+
+		local providerName = provider:GetProviderName()
 
 		if self._providerLookupByName[providerName] then
 			error(string.format("Already have a provider with name %q", providerName))
@@ -69,13 +69,6 @@ function InputKeyMapRegistryServiceShared.Init(
 	end))
 end
 
---[=[
-	Registers a provider with the registry.
-
-	@within InputKeyMapRegistryServiceShared
-	@param provider any
-	@return () -> ()
-]=]
 function InputKeyMapRegistryServiceShared.RegisterProvider(
 	self: InputKeyMapRegistryServiceShared,
 	provider: any
@@ -86,24 +79,12 @@ function InputKeyMapRegistryServiceShared.RegisterProvider(
 	return self._providersList:Add(provider)
 end
 
---[=[
-	Observes providers as a Brio stream.
-
-	@within InputKeyMapRegistryServiceShared
-	@return Observable<Brio<any>>
-]=]
 function InputKeyMapRegistryServiceShared.ObserveProvidersBrio(
 	self: InputKeyMapRegistryServiceShared
 ): Observable.Observable<Brio.Brio<any>>
 	return self._providersList:ObserveItemsBrio()
 end
 
---[=[
-	Observes all InputKeyMapLists from registered providers as a Brio stream.
-
-	@within InputKeyMapRegistryServiceShared
-	@return Observable<Brio<InputKeyMapList>>
-]=]
 function InputKeyMapRegistryServiceShared.ObserveInputKeyMapListsBrio(self: InputKeyMapRegistryServiceShared): Observable.Observable<
 	Brio.Brio<InputKeyMapList.InputKeyMapList>
 >
@@ -114,27 +95,12 @@ function InputKeyMapRegistryServiceShared.ObserveInputKeyMapListsBrio(self: Inpu
 	})
 end
 
---[=[
-	Gets a registered provider by name.
-
-	@within InputKeyMapRegistryServiceShared
-	@param providerName string
-	@return any
-]=]
 function InputKeyMapRegistryServiceShared.GetProvider(self: InputKeyMapRegistryServiceShared, providerName: string): any
-	assert(t.string(providerName), "Bad providerName")
+	assert(type(providerName) == "string", "Bad providerName")
 
 	return self._providerLookupByName[providerName]
 end
 
---[=[
-	Observes an InputKeyMapList by provider name and list name.
-
-	@within InputKeyMapRegistryServiceShared
-	@param providerName any
-	@param inputKeyMapListName any
-	@return Observable<InputKeyMapList?>
-]=]
 function InputKeyMapRegistryServiceShared.ObserveInputKeyMapList(
 	self: InputKeyMapRegistryServiceShared,
 	providerName: any,
@@ -154,7 +120,7 @@ function InputKeyMapRegistryServiceShared.ObserveInputKeyMapList(
 				return nil
 			end
 
-			const found = self:FindInputKeyMapList(state.providerName, state.inputKeyMapListName)
+			local found = self:FindInputKeyMapList(state.providerName, state.inputKeyMapListName)
 			if found then
 				return found
 			end
@@ -172,21 +138,13 @@ function InputKeyMapRegistryServiceShared.ObserveInputKeyMapList(
 	})
 end
 
---[=[
-	Finds an InputKeyMapList by provider name and list name.
-
-	@within InputKeyMapRegistryServiceShared
-	@param providerName string
-	@param inputKeyMapListName string
-	@return InputKeyMapList?
-]=]
 function InputKeyMapRegistryServiceShared.FindInputKeyMapList(
 	self: InputKeyMapRegistryServiceShared,
 	providerName: string,
 	inputKeyMapListName: string
 ): InputKeyMapList.InputKeyMapList?
-	assert(t.string(providerName), "Bad providerName")
-	assert(t.string(inputKeyMapListName), "Bad inputKeyMapListName")
+	assert(type(providerName) == "string", "Bad providerName")
+	assert(type(inputKeyMapListName) == "string", "Bad inputKeyMapListName")
 
 	if not RunService:IsRunning() then
 		return nil
@@ -196,7 +154,7 @@ function InputKeyMapRegistryServiceShared.FindInputKeyMapList(
 
 	for _, provider in self._providerLookupByName do
 		if provider:GetProviderName() == providerName then
-			const found = provider:FindInputKeyMapList(inputKeyMapListName)
+			local found = provider:FindInputKeyMapList(inputKeyMapListName)
 			if found then
 				return found
 			end

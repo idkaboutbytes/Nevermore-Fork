@@ -1,12 +1,8 @@
 --!strict
---[=[
-	JSONTranslator instance for InputKeyMap strings.
+--[[
+	@class InputKeyMapTranslator
+]]
 
-	@util InputKeyMapTranslator
-]=]
+local require = require("../../Loader").load()
 
-const require = require("../../Loader").load()
-
-const JSONTranslator = require("JSONTranslator")
-
-return JSONTranslator.new("InputKeyMapTranslator", "en", {})
+return require("JSONTranslator").new("InputKeyMapTranslator", "en", {})

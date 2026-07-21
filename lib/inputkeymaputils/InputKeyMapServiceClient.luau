@@ -1,23 +1,17 @@
 --!strict
 --[=[
-	Client service for input key map resolution and translation setup.
-
 	@class InputKeyMapServiceClient
-	@client
 ]=]
 
-const require = require("../Loader").load()
+local require = require("../Loader").load()
 
-const InputKeyMapList = require("InputKeyMapList")
-const InputKeyMapRegistryServiceShared = require("InputKeyMapRegistryServiceShared")
-const InputKeyMapTranslator = require("InputKeyMapTranslator")
-const InputModeServiceClient = require("InputModeServiceClient")
-const Maid = require("Maid")
-const PseudoLocalize = require("PseudoLocalize")
-const ServiceBag = require("ServiceBag")
-const t = require("t")
+local InputKeyMapList = require("InputKeyMapList")
+local InputKeyMapRegistryServiceShared = require("InputKeyMapRegistryServiceShared")
+local Maid = require("Maid")
+local PseudoLocalize = require("PseudoLocalize")
+local ServiceBag = require("ServiceBag")
 
-const InputKeyMapServiceClient = {}
+local InputKeyMapServiceClient = {}
 InputKeyMapServiceClient.ServiceName = "InputKeyMapServiceClient"
 
 export type InputKeyMapServiceClient = typeof(setmetatable(
@@ -26,41 +20,30 @@ export type InputKeyMapServiceClient = typeof(setmetatable(
 		_maid: Maid.Maid,
 		_translator: any,
 		_registryService: InputKeyMapRegistryServiceShared.InputKeyMapRegistryServiceShared,
-		_inputModeServiceClient: InputModeServiceClient.InputModeServiceClient,
 	},
 	{} :: typeof({ __index = InputKeyMapServiceClient })
 ))
 
 function InputKeyMapServiceClient.Init(self: InputKeyMapServiceClient, serviceBag: ServiceBag.ServiceBag): ()
 	assert(not (self :: any)._serviceBag, "Already initialized")
-	assert(t.table(serviceBag), "Bad serviceBag")
-
-	self._serviceBag = serviceBag
+	self._serviceBag = assert(serviceBag, "No serviceBag")
 	self._maid = Maid.new()
 
-	self._inputModeServiceClient = self._serviceBag:GetService(InputModeServiceClient)
-	self._translator = self._serviceBag:GetService(InputKeyMapTranslator)
-	self._registryService = self._serviceBag:GetService(InputKeyMapRegistryServiceShared)
+	-- External
+	self._serviceBag:GetService(require("InputModeServiceClient"))
+
+	-- Internal
+	self._translator = self._serviceBag:GetService(require("InputKeyMapTranslator"))
+	self._registryService = self._serviceBag:GetService(require("InputKeyMapRegistryServiceShared")) :: any
 
 	self:_ensureLocalizationEntries()
 end
 
---[=[
-	Finds an InputKeyMapList by provider name and list name.
-
-	@within InputKeyMapServiceClient
-	@param providerName string
-	@param listName string
-	@return InputKeyMapList?
-]=]
 function InputKeyMapServiceClient.FindInputKeyMapList(
 	self: InputKeyMapServiceClient,
 	providerName: string,
 	listName: string
 ): InputKeyMapList.InputKeyMapList?
-	assert(t.string(providerName), "Bad providerName")
-	assert(t.string(listName), "Bad listName")
-
 	return self._registryService:FindInputKeyMapList(providerName, listName)
 end
 
@@ -70,14 +53,16 @@ function InputKeyMapServiceClient._ensureLocalizationEntries(self: InputKeyMapSe
 			return
 		end
 
-		const inputKeyMapList = brio:GetValue()
-		const text = inputKeyMapList:GetBindingName()
-		const localizationTable = self._translator:GetLocalizationTable()
-		const key = inputKeyMapList:GetBindingTranslationKey()
-		const source = text
-		const context = string.format("InputKeyMapServiceClient.%s", inputKeyMapList:GetListName())
-		const localeId = "en"
-		const value = text
+		local inputKeyMapList = brio:GetValue()
+
+		local text = inputKeyMapList:GetBindingName()
+
+		local localizationTable = self._translator:GetLocalizationTable()
+		local key = inputKeyMapList:GetBindingTranslationKey()
+		local source = text
+		local context = string.format("InputKeyMapServiceClient.%s", inputKeyMapList:GetListName())
+		local localeId = "en"
+		local value = text
 
 		localizationTable:SetEntryValue(key, source, context, localeId, value)
 		localizationTable:SetEntryValue(

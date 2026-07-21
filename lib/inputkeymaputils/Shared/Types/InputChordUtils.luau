@@ -2,13 +2,12 @@
 --[=[
 	Standardized data type to define an input chord, such as Ctrl+Z.
 
-	@util InputChordUtils
+	@class InputChordUtils
 ]=]
 
-const require = require("../../../Loader").load()
+local require = require("../../../Loader").load()
 
-const EnumUtils = require("EnumUtils")
-const t = require("t")
+local EnumUtils = require("EnumUtils")
 
 --[=[
 	A modifier input chord data type that separates keyCode from modifier keys.
@@ -22,12 +21,10 @@ export type ModifierInputChord = {
 	keyCode: Enum.KeyCode,
 }
 
-const InputChordUtils = {}
+local InputChordUtils = {}
 
 --[=[
-	Checks if the data is a modifier input chord.
-
-	@within InputChordUtils
+	Checks
 	@param data any
 	@return boolean
 ]=]
@@ -43,16 +40,17 @@ end
 	order such that the event only triggers when the keyCode is pressed, but
 	also requires the modifier key to be down at the trigger point.
 
-	@within InputChordUtils
-	@param modifiers { Enum.KeyCode }
-	@param keyCode Enum.KeyCode
+	This mirrors the existing modifier standards for Windows.
+
+	@param modifiers { KeyCode }
+	@param keyCode KeyCode
 	@return ModifierInputChord
 ]=]
 function InputChordUtils.createModifierInputChord(
 	modifiers: { Enum.KeyCode },
 	keyCode: Enum.KeyCode
 ): ModifierInputChord
-	assert(t.table(modifiers), "Bad modifiers")
+	assert(type(modifiers) == "table", "Bad modifiers")
 	assert(EnumUtils.isOfType(Enum.KeyCode, keyCode), "Bad keyCode")
 
 	return {

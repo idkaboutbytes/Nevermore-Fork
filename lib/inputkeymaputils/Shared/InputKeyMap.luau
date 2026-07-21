@@ -1,109 +1,131 @@
 --!strict
 --[=[
-	Binds input mode type to actual key codes/types.
+	This represents a list of key bindings for a specific mode. While this is a useful object to query
+	for showing icons and input hints to the user, in general, it is recommended that binding occur
+	at the list level instead of at the input mode level. That way, if the user switches to another input
+	mode then input is immediately processed.
 
 	@class InputKeyMap
 ]=]
 
-const require = require("../../Loader").load()
+local require = require("../../Loader").load()
 
-const InputModeType = require("InputModeType")
-const InputTypeUtils = require("InputTypeUtils")
-const Maid = require("Maid")
-const Observable = require("Observable")
-const ValueObject = require("ValueObject")
-const t = require("t")
+local BaseObject = require("BaseObject")
+local InputModeType = require("InputModeType")
+local InputTypeUtils = require("InputTypeUtils")
+local Observable = require("Observable")
+local ValueObject = require("ValueObject")
 
-const InputKeyMap = {}
+local InputKeyMap = setmetatable({}, BaseObject)
 InputKeyMap.ClassName = "InputKeyMap"
 InputKeyMap.__index = InputKeyMap
 
-export type InputKeyMap = typeof(setmetatable(
-	{} :: {
-		_maid: Maid.Maid,
-		_inputModeType: InputModeType.InputModeType,
-		_inputTypesList: ValueObject.ValueObject<{ InputTypeUtils.InputType }>,
-	},
-	{} :: typeof({ __index = InputKeyMap })
-))
+type InputType = InputTypeUtils.InputType
+
+export type InputKeyMap =
+	typeof(setmetatable(
+		{} :: {
+			_inputModeType: InputModeType.InputModeType,
+			_defaultInputTypes: { InputTypeUtils.InputType },
+			_inputTypeList: ValueObject.ValueObject<{ InputTypeUtils.InputType }>,
+		},
+		{} :: typeof({ __index = InputKeyMap })
+	))
+	& BaseObject.BaseObject
 
 --[=[
-	Returns true if the value is an InputKeyMap.
+	Constructs a new InputKeyMap. Generally this would be sent immediately to an
+	[InputKeyMapList]. This holds a list of key bindings for a specific type.
 
-	@within InputKeyMap
-	@param value any
-	@return boolean
+	@param inputModeType InputModeType
+	@param inputTypes { InputType }
+	@return InputKeyMap
 ]=]
-function InputKeyMap.isInputKeyMap(value: any): boolean
-	return type(value) == "table" and value.ClassName == "InputKeyMap"
-end
-
-function InputKeyMap.new(
-	inputModeType: InputModeType.InputModeType,
-	inputTypesList: { InputTypeUtils.InputType }
-): InputKeyMap
+function InputKeyMap.new(inputModeType: InputModeType.InputModeType, inputTypes: { InputType }): InputKeyMap
 	assert(InputModeType.isInputModeType(inputModeType), "Bad inputModeType")
-	assert(t.table(inputTypesList), "Bad inputTypesList")
+	assert(type(inputTypes) == "table" or inputTypes == nil, "Bad inputTypes")
 
-	const self = setmetatable({}, InputKeyMap) :: InputKeyMap
+	local self = setmetatable(BaseObject.new() :: any, InputKeyMap)
 
-	self._maid = Maid.new()
-	self._inputModeType = inputModeType
-	self._inputTypesList = self._maid:Add(ValueObject.new(inputTypesList, "table"))
+	self._inputModeType = assert(inputModeType, "No inputModeType")
+
+	self._defaultInputTypes = inputTypes or {}
+
+	self._inputTypeList = self._maid:Add(ValueObject.new(self._defaultInputTypes))
 
 	return self
 end
 
 --[=[
-	Gets the input mode type for this map.
-
-	@within InputKeyMap
-	@return InputModeType
+	Gets the input mode for this keymap. This will not change.
 ]=]
 function InputKeyMap.GetInputModeType(self: InputKeyMap): InputModeType.InputModeType
 	return self._inputModeType
 end
 
 --[=[
-	Gets the list of input types bound to this mode.
+	Sets the input types list for this input key map.
 
-	@within InputKeyMap
-	@return { InputType }
+	@param inputTypes { InputType }
 ]=]
-function InputKeyMap.GetInputTypesList(self: InputKeyMap): { InputTypeUtils.InputType }
-	return self._inputTypesList.Value
+function InputKeyMap.SetInputTypesList(self: InputKeyMap, inputTypes: { InputType }): ()
+	assert(type(inputTypes) == "table", "Bad inputTypes")
+
+	self._inputTypeList.Value = inputTypes
 end
 
 --[=[
-	Sets the list of input types.
+	Sets the default input types list. This is whatever the game has, which is
+	different than whatever the user has set.
 
-	@within InputKeyMap
-	@param inputTypesList { InputType }
+	This will also set the current input type to be the same as the default if they
+	are equivalent.
+
+	@param inputTypes { InputType }
 ]=]
-function InputKeyMap.SetInputTypesList(self: InputKeyMap, inputTypesList: { InputTypeUtils.InputType }): ()
-	assert(t.table(inputTypesList), "Bad inputTypesList")
+function InputKeyMap.SetDefaultInputTypesList(self: InputKeyMap, inputTypes: { InputType }): ()
+	assert(type(inputTypes) == "table", "Bad inputTypes")
+	assert(type(self._defaultInputTypes) == "table", "bad self._defaultInputTypes")
 
-	if InputTypeUtils.areInputTypesListsEquivalent(self._inputTypesList.Value, inputTypesList) then
-		return
+	if InputTypeUtils.areInputTypesListsEquivalent(self._inputTypeList.Value, self._defaultInputTypes) then
+		self._inputTypeList.Value = inputTypes
 	end
 
-	self._inputTypesList.Value = inputTypesList
+	self._defaultInputTypes = inputTypes
 end
 
 --[=[
-	Observes the list of input types.
+	Gets the default input types list
 
-	@within InputKeyMap
-	@return Observable<{ InputType }>
+	@return { InputType }
 ]=]
-function InputKeyMap.ObserveInputTypesList(self: InputKeyMap): Observable.Observable<{ InputTypeUtils.InputType }>
-	return self._inputTypesList:Observe()
+function InputKeyMap.GetDefaultInputTypesList(self: InputKeyMap): { InputType }
+	return self._defaultInputTypes
 end
 
-function InputKeyMap.Destroy(self: InputKeyMap): ()
-	self._maid:DoCleaning()
-	table.clear(self :: any)
-	setmetatable(self :: any, nil)
+--[=[
+	Resets the input type to the default input types.
+]=]
+function InputKeyMap.RestoreDefault(self: InputKeyMap): ()
+	self._inputTypeList.Value = self._defaultInputTypes
+end
+
+--[=[
+	Observes the current list for the input key map list.
+
+	@return Observable<{ InputType }>
+]=]
+function InputKeyMap.ObserveInputTypesList(self: InputKeyMap): Observable.Observable<{ InputType }>
+	return self._inputTypeList:Observe()
+end
+
+--[=[
+	Gets the input types list
+
+	@return { InputType }
+]=]
+function InputKeyMap.GetInputTypesList(self: InputKeyMap): { InputType }
+	return self._inputTypeList.Value
 end
 
 return InputKeyMap

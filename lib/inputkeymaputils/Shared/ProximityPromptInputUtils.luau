@@ -1,31 +1,29 @@
 --!strict
 --[=[
-	Utility functions to configure ProximityPrompts based upon input key maps.
-
-	@util ProximityPromptInputUtils
+	Utility functions to configure a proximity prompt based upon the
+	input key map given.
+	@class ProximityPromptInputUtils
 ]=]
 
-const require = require("../../Loader").load()
+local require = require("../../Loader").load()
 
-const InputKeyMap = require("InputKeyMap")
-const InputKeyMapList = require("InputKeyMapList")
-const InputModeType = require("InputModeType")
-const InputModeTypes = require("InputModeTypes")
-const InputTypeUtils = require("InputTypeUtils")
-const SlottedTouchButtonUtils = require("SlottedTouchButtonUtils")
-const t = require("t")
+local InputKeyMap = require("InputKeyMap")
+local InputKeyMapList = require("InputKeyMapList")
+local InputModeType = require("InputModeType")
+local InputModeTypes = require("InputModeTypes")
+local InputTypeUtils = require("InputTypeUtils")
+local SlottedTouchButtonUtils = require("SlottedTouchButtonUtils")
 
-const ProximityPromptInputUtils = {}
+local ProximityPromptInputUtils = {}
 
 --[=[
-	Creates an InputKeyMapList from a ProximityPrompt.
+	Creates an InputKeyMapList from a proximity prompt.
 
-	@within ProximityPromptInputUtils
 	@param prompt ProximityPrompt
 	@return InputKeyMapList
 ]=]
 function ProximityPromptInputUtils.newInputKeyMapFromPrompt(prompt: ProximityPrompt): InputKeyMapList.InputKeyMapList
-	assert(t.instanceIsA("ProximityPrompt")(prompt), "Bad prompt")
+	assert(typeof(prompt) == "Instance" and prompt:IsA("ProximityPrompt"), "Bad prompt")
 
 	return InputKeyMapList.new("custom", {
 		InputKeyMap.new(InputModeTypes.Gamepads, { prompt.GamepadKeyCode }),
@@ -38,21 +36,20 @@ function ProximityPromptInputUtils.newInputKeyMapFromPrompt(prompt: ProximityPro
 end
 
 --[=[
-	Sets the key codes for a ProximityPrompt to match an InputKeyMapList.
+	Sets the key codes for a proximity prompt to match an inputKeyMapList
 
-	@within ProximityPromptInputUtils
 	@param prompt ProximityPrompt
 	@param inputKeyMapList InputKeyMapList
 ]=]
 function ProximityPromptInputUtils.configurePromptFromInputKeyMap(
 	prompt: ProximityPrompt,
 	inputKeyMapList: InputKeyMapList.InputKeyMapList
-): ()
-	assert(t.instanceIsA("ProximityPrompt")(prompt), "Bad prompt")
-	assert(InputKeyMapList.isInputKeyMapList(inputKeyMapList), "Bad inputKeyMapList")
+)
+	assert(typeof(prompt) == "Instance", "Bad prompt")
+	assert(type(inputKeyMapList) == "table", "Bad inputKeyMapList")
 
-	const keyboard = ProximityPromptInputUtils.getFirstInputKeyCode(inputKeyMapList, InputModeTypes.KeyboardAndMouse)
-	const gamepad = ProximityPromptInputUtils.getFirstInputKeyCode(inputKeyMapList, InputModeTypes.Gamepads)
+	local keyboard = ProximityPromptInputUtils.getFirstInputKeyCode(inputKeyMapList, InputModeTypes.KeyboardAndMouse)
+	local gamepad = ProximityPromptInputUtils.getFirstInputKeyCode(inputKeyMapList, InputModeTypes.Gamepads)
 
 	if keyboard then
 		prompt.KeyboardKeyCode = keyboard
@@ -64,9 +61,8 @@ function ProximityPromptInputUtils.configurePromptFromInputKeyMap(
 end
 
 --[=[
-	Picks the first KeyCode that matches the InputModeType.
+	Picks the first keyCode that matches the inputModeType.
 
-	@within ProximityPromptInputUtils
 	@param inputKeyMapList InputKeyMapList
 	@param inputModeType InputModeType
 	@return KeyCode?
@@ -75,10 +71,10 @@ function ProximityPromptInputUtils.getFirstInputKeyCode(
 	inputKeyMapList: InputKeyMapList.InputKeyMapList,
 	inputModeType: InputModeType.InputModeType
 ): Enum.KeyCode?
-	assert(InputKeyMapList.isInputKeyMapList(inputKeyMapList), "Bad inputKeyMapList")
+	assert(type(inputKeyMapList) == "table", "Bad inputKeyMapList")
 	assert(InputModeType.isInputModeType(inputModeType), "Bad inputModeType")
 
-	const inputTypesForInputMode: { InputTypeUtils.InputType } = inputKeyMapList:GetInputTypesList(inputModeType)
+	local inputTypesForInputMode: { InputTypeUtils.InputType } = inputKeyMapList:GetInputTypesList(inputModeType)
 	for _, entry in inputTypesForInputMode do
 		if typeof(entry) == "EnumItem" and entry.EnumType == Enum.KeyCode then
 			return entry :: any

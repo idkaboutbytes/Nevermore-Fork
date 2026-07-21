@@ -1,44 +1,47 @@
 --!strict
 --[=[
-	Utility functions for working with slotted touch buttons.
-
-	@util SlottedTouchButtonUtils
+	@class SlottedTouchButtonUtils
 ]=]
 
-const require = require("../../../Loader").load()
+local require = require("../../../Loader").load()
 
-const InputModeType = require("InputModeType")
-const t = require("t")
+local InputModeType = require("InputModeType")
 
+local SlottedTouchButtonUtils = {}
+
+--[=[
+	Internal data representing a slotted touch button
+	@interface SlottedTouchButtonData
+	.slotId string
+	.inputModeType InputModeType
+	@within SlottedTouchButtonUtils
+]=]
 export type SlottedTouchButtonData = {
 	slotId: string,
 	inputModeType: InputModeType.InputModeType,
 }
 
-const SlottedTouchButtonUtils = {}
-
 --[=[
-	Returns true if the input type is a slotted touch button.
+	Touch buttons should always show up in the same position
+	We use the SlotId to determine which slot we should put
+	these buttons in.
 
-	@within SlottedTouchButtonUtils
-	@param inputType any
-	@return boolean
-]=]
-function SlottedTouchButtonUtils.isSlottedTouchButton(inputType: any): boolean
-	return type(inputType) == "table" and inputType.type == "SlottedTouchButton" and t.string(inputType.slotId)
-end
-
---[=[
-	Creates a slotted touch button.
-
-	@within SlottedTouchButtonUtils
 	@param slotId string
-	@return { type: "SlottedTouchButton", slotId: string }
+	@return SlottedTouchButton
 ]=]
-function SlottedTouchButtonUtils.createSlottedTouchButton(
-	slotId: string
-): { type: "SlottedTouchButton", slotId: string }
-	assert(t.string(slotId), "Bad slotId")
+function SlottedTouchButtonUtils.createSlottedTouchButton(slotId: string): any
+	assert(
+		slotId == "primary1"
+			or slotId == "primary2"
+			or slotId == "primary3"
+			or slotId == "primary4"
+			or slotId == "primary5"
+			or slotId == "inner1"
+			or slotId == "inner2"
+			or slotId == "jumpbutton"
+			or slotId == "touchpad1",
+		"Bad slotId"
+	)
 
 	return {
 		type = "SlottedTouchButton",
@@ -47,9 +50,18 @@ function SlottedTouchButtonUtils.createSlottedTouchButton(
 end
 
 --[=[
-	Creates slotted touch button data.
+	Returns whether an inputType is a SlottedTouchButton type
 
-	@within SlottedTouchButtonUtils
+	@param inputType any
+	@return boolean
+]=]
+function SlottedTouchButtonUtils.isSlottedTouchButton(inputType: any): boolean
+	return type(inputType) == "table" and inputType.type == "SlottedTouchButton"
+end
+
+--[=[
+	Gets slotted touch button data for an inputKeyMapList
+
 	@param slotId string
 	@param inputModeType InputModeType
 	@return SlottedTouchButtonData
@@ -58,8 +70,6 @@ function SlottedTouchButtonUtils.createTouchButtonData(
 	slotId: string,
 	inputModeType: InputModeType.InputModeType
 ): SlottedTouchButtonData
-	assert(t.string(slotId), "Bad slotId")
-
 	return {
 		slotId = slotId,
 		inputModeType = inputModeType,
@@ -67,21 +77,18 @@ function SlottedTouchButtonUtils.createTouchButtonData(
 end
 
 --[=[
-	Gets slotted touch button data for an inputKeyMapList.
+	Gets slotted touch button data for an inputKeyMapList
 
-	@within SlottedTouchButtonUtils
-	@param inputKeyMapList any
+	@param inputKeyMapList InputKeyMapList
 	@return { SlottedTouchButtonData }
 ]=]
 function SlottedTouchButtonUtils.getSlottedTouchButtonData(inputKeyMapList: any): { SlottedTouchButtonData }
-	assert(t.table(inputKeyMapList), "Bad inputKeyMapList")
-
-	const slottedTouchButtons: { SlottedTouchButtonData } = {}
+	local slottedTouchButtons: { SlottedTouchButtonData } = {}
 
 	for _, inputKeyMap: any in inputKeyMapList:GetInputKeyMaps() do
 		for _, touchButtonData in inputKeyMap:GetInputTypesList() do
 			if SlottedTouchButtonUtils.isSlottedTouchButton(touchButtonData) then
-				const slottedButtonData = touchButtonData :: any
+				local slottedButtonData = touchButtonData :: any
 				table.insert(
 					slottedTouchButtons,
 					SlottedTouchButtonUtils.createTouchButtonData(
