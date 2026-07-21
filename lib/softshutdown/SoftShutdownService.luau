@@ -15,6 +15,7 @@ const Workspace = game:GetService("Workspace")
 const require = require("../Loader").load()
 
 const BindToCloseService = require("BindToCloseService")
+const DataService = require("DataService")
 const Maid = require("Maid")
 const Promise = require("Promise")
 const ServiceBag = require("ServiceBag")
@@ -32,6 +33,7 @@ export type SoftShutdownService = typeof(setmetatable(
 		_maid: Maid.Maid,
 		_serviceBag: ServiceBag.ServiceBag,
 		_bindToCloseService: BindToCloseService.BindToCloseService,
+		_dataService: DataService.DataService,
 		_translator: any,
 	},
 	{} :: typeof({ __index = SoftShutdownService })
@@ -49,6 +51,7 @@ function SoftShutdownService.Init(self: SoftShutdownService, serviceBag: Service
 	self._maid = Maid.new()
 
 	self._bindToCloseService = self._serviceBag:GetService(BindToCloseService) :: any
+	self._dataService = self._serviceBag:GetService(DataService)
 	self._translator = self._serviceBag:GetService(SoftShutdownTranslator)
 end
 
@@ -80,61 +83,63 @@ function SoftShutdownService._promiseTeleportPlayersToLobby(self: SoftShutdownSe
 
 	Workspace:SetAttribute(SoftShutdownConstants.IS_SOFT_SHUTDOWN_UPDATING_ATTRIBUTE, true)
 
-	const initialTeleportOptions = Instance.new("TeleportOptions")
-	initialTeleportOptions.ShouldReserveServer = true
-	initialTeleportOptions:SetTeleportData({
-		isSoftShutdownReserveServer = true,
-	})
+	return self._dataService:SaveAllProfilesAsync():Then(function()
+		const initialTeleportOptions = Instance.new("TeleportOptions")
+		initialTeleportOptions.ShouldReserveServer = true
+		initialTeleportOptions:SetTeleportData({
+			isSoftShutdownReserveServer = true,
+		})
 
-	-- Collect any players remaining
-	const remainingPlayers: { Player } = {}
-	(self._maid :: any)._playerAddedCollector = Players.PlayerAdded:Connect(function(player: Player)
-		table.insert(remainingPlayers, player)
-	end)
-
-	return Promise.spawn(function(resolve, _reject)
-		-- Wait to let the teleport GUI be set
-		task.delay(1, resolve)
-	end)
-		:Then(function()
-			return TeleportServiceUtils.promiseTeleport(game.PlaceId, players, initialTeleportOptions)
+		-- Collect any players remaining
+		const remainingPlayers: { Player } = {}
+		(self._maid :: any)._playerAddedCollector = Players.PlayerAdded:Connect(function(player: Player)
+			table.insert(remainingPlayers, player)
 		end)
-		:Then(function(teleportResult: TeleportAsyncResult)
-			(self._maid :: any)._playerAddedCollector = nil
 
-			-- Construct new teleport options
-			const newTeleportOptions = Instance.new("TeleportOptions")
-			newTeleportOptions.ServerInstanceId = teleportResult.PrivateServerId
-			newTeleportOptions.ReservedServerAccessCode = teleportResult.ReservedServerAccessCode
-			newTeleportOptions:SetTeleportData({
-				isSoftShutdownReserveServer = true,
-			})
+		return Promise.spawn(function(resolve, _reject)
+			-- Wait to let the teleport GUI be set
+			task.delay(1, resolve)
+		end)
+			:Then(function()
+				return TeleportServiceUtils.promiseTeleport(game.PlaceId, players, initialTeleportOptions)
+			end)
+			:Then(function(teleportResult: TeleportAsyncResult)
+				(self._maid :: any)._playerAddedCollector = nil
 
-			-- Teleport any players that joined during initial teleport
-			const promises = {}
+				-- Construct new teleport options
+				const newTeleportOptions = Instance.new("TeleportOptions")
+				newTeleportOptions.ServerInstanceId = teleportResult.PrivateServerId
+				newTeleportOptions.ReservedServerAccessCode = teleportResult.ReservedServerAccessCode
+				newTeleportOptions:SetTeleportData({
+					isSoftShutdownReserveServer = true,
+				})
 
-			if #remainingPlayers > 0 then
-				table.insert(
-					promises,
-					TeleportServiceUtils.promiseTeleport(game.PlaceId, remainingPlayers, newTeleportOptions)
-				)
-			end
+				-- Teleport any players that joined during initial teleport
+				const promises = {}
 
-			self._maid:GiveTask(Players.PlayerAdded:Connect(function(player: Player)
-				table.insert(
-					promises,
-					TeleportServiceUtils.promiseTeleport(game.PlaceId, { player }, newTeleportOptions)
-				)
-			end))
-
-			return Promise.spawn(function(resolve)
-				while #Players:GetPlayers() > 0 and self:_containsPending(promises) do
-					task.wait(1)
+				if #remainingPlayers > 0 then
+					table.insert(
+						promises,
+						TeleportServiceUtils.promiseTeleport(game.PlaceId, remainingPlayers, newTeleportOptions)
+					)
 				end
 
-				resolve()
+				self._maid:GiveTask(Players.PlayerAdded:Connect(function(player: Player)
+					table.insert(
+						promises,
+						TeleportServiceUtils.promiseTeleport(game.PlaceId, { player }, newTeleportOptions)
+					)
+				end))
+
+				return Promise.spawn(function(resolve)
+					while #Players:GetPlayers() > 0 and self:_containsPending(promises) do
+						task.wait(1)
+					end
+
+					resolve()
+				end)
 			end)
-		end)
+	end)
 end
 
 function SoftShutdownService._containsPending(_self: SoftShutdownService, promises: { any }): boolean
