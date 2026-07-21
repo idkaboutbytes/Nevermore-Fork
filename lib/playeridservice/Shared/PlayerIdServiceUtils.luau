@@ -5,6 +5,8 @@
 	@util PlayerIdServiceUtils
 ]=]
 
+const Players = game:GetService("Players")
+
 const require = require("../../Loader").load()
 
 const Observable = require("Observable")
@@ -32,6 +34,24 @@ function PlayerIdServiceUtils.getId(player: Player): number?
 	assert(t.instanceIsA("Player")(player), "Bad player")
 	const value = player:GetAttribute(PlayerIdServiceConstants.PLAYER_ID_ATTRIBUTE)
 	return if PlayerIdServiceUtils.isPlayerId(value) then value :: number else nil
+end
+
+--[=[
+	Returns the player associated with a replicated uint8 player ID, or nil if not found.
+
+	@param playerId number
+	@return Player?
+]=]
+function PlayerIdServiceUtils.getPlayerFromId(playerId: number): Player?
+	assert(PlayerIdServiceUtils.isPlayerId(playerId), "Bad playerId")
+
+	for _, player in Players:GetPlayers() do
+		if PlayerIdServiceUtils.getId(player) == playerId then
+			return player
+		end
+	end
+
+	return nil
 end
 
 --[=[

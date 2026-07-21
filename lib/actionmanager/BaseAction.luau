@@ -2,14 +2,10 @@
 --[=[
 	BaseAction state for [ActionManager].
 
-	:::info
-	This is legacy code and probably should not be used in new games.
-	:::
-
 	@class BaseAction
 ]=]
 
-local require = require("../Loader").load()
+local require = require(script.Parent.loader).load(script)
 
 local ContextActionService = game:GetService("ContextActionService")
 
@@ -25,9 +21,12 @@ BaseAction.ClassName = "BaseAction"
 
 (EnabledMixin :: any):Add(BaseAction)
 
+export type ActivationMode = "Toggle" | "Hold"
+
 export type ActionData = {
 	Name: string,
-	Shortcuts: { any }?,
+	Shortcuts: { Enum.KeyCode | Enum.UserInputType }?,
+	ActivationMode: ActivationMode?,
 	[any]: any,
 }
 
@@ -38,11 +37,11 @@ export type BaseAction = typeof(setmetatable(
 		_contextActionKey: string,
 		_activateData: { any }?,
 		_actionData: ActionData,
+
 		Activated: Signal.Signal<...any>,
 		Deactivated: Signal.Signal<()>,
 		IsActivatedValue: ValueObject.ValueObject<boolean>,
 
-		-- EnabledMixin surface (methods injected at runtime via EnabledMixin:Add)
 		_enabledMaidReference: Maid.Maid,
 		_enabledState: ValueObject.ValueObject<boolean>,
 		EnabledChanged: Signal.Signal<(boolean, boolean?)>,
@@ -63,11 +62,11 @@ function BaseAction.new(actionData: ActionData): BaseAction
 
 	self._maid = Maid.new()
 	self._name = actionData.Name or error("No name")
-	self._contextActionKey = string.format("%s_ContextAction", tostring(self._name))
-	self._activateData = nil -- Data to be fired with the Activated event
+	self._contextActionKey = string.format("%s_ContextAction", self._name)
+	self._activateData = nil
 
-	self.Activated = self._maid:Add(Signal.new() :: Signal.Signal<...any>) -- :Fire(actionMaid, ... (activateData))
-	self.Deactivated = self._maid:Add(Signal.new() :: Signal.Signal<()>) -- :Fire()
+	self.Activated = self._maid:Add(Signal.new() :: Signal.Signal<...any>)
+	self.Deactivated = self._maid:Add(Signal.new() :: Signal.Signal<()>)
 
 	self.IsActivatedValue = self._maid:Add(ValueObject.new(false, "boolean"))
 
@@ -77,7 +76,6 @@ function BaseAction.new(actionData: ActionData): BaseAction
 		self:_handleIsActiveValueChanged()
 	end))
 
-	-- Prevent being activated when disabled
 	self._maid:GiveTask(self.EnabledChanged:Connect(function(isEnabled)
 		self:_handleEnabledChanged(isEnabled)
 	end))
@@ -99,6 +97,7 @@ function BaseAction._handleIsActiveValueChanged(self: BaseAction): ()
 	if self.IsActivatedValue.Value then
 		local actionMaid = Maid.new()
 		self._maid._actionMaid = actionMaid
+
 		self.Activated:Fire(actionMaid, unpack(self._activateData or {}))
 		self._activateData = nil
 	else
@@ -111,12 +110,37 @@ function BaseAction.GetName(self: BaseAction): string
 	return self._name
 end
 
+function BaseAction.GetActivationMode(self: BaseAction): ActivationMode
+	return self._actionData.ActivationMode or "Toggle"
+end
+
 function BaseAction._withActionData(self: BaseAction, actionData: ActionData): BaseAction
-	self._actionData = actionData or error("No actionData")
+	self._actionData = actionData
+
+	local activationMode = self:GetActivationMode()
+	assert(activationMode == "Toggle" or activationMode == "Hold", "Bad ActivationMode")
 
 	self:_updateShortcuts()
 
 	return self
+end
+
+function BaseAction._handleShortcut(self: BaseAction, userInputState: Enum.UserInputState): Enum.ContextActionResult
+	local activationMode = self:GetActivationMode()
+
+	if activationMode == "Hold" then
+		if userInputState == Enum.UserInputState.Begin then
+			self:Activate()
+		elseif userInputState == Enum.UserInputState.End or userInputState == Enum.UserInputState.Cancel then
+			self:Deactivate()
+		end
+	else
+		if userInputState == Enum.UserInputState.Begin then
+			self:ToggleActivate()
+		end
+	end
+
+	return Enum.ContextActionResult.Pass
 end
 
 function BaseAction._updateShortcuts(self: BaseAction): ()
@@ -124,20 +148,25 @@ function BaseAction._updateShortcuts(self: BaseAction): ()
 		return
 	end
 
+	ContextActionService:UnbindAction(self._contextActionKey)
+
 	local shortcuts = self._actionData.Shortcuts
-	if not (shortcuts and #shortcuts > 0) then
+	if not shortcuts or #shortcuts == 0 then
 		return
 	end
 
-	if self:IsEnabled() then
-		ContextActionService:BindAction(self._contextActionKey, function(_, userInputState, _)
-			if userInputState == Enum.UserInputState.Begin then
-				self:ToggleActivate()
-			end
-		end, false, unpack(shortcuts))
-	else
-		ContextActionService:UnbindAction(self._contextActionKey)
+	if not self:IsEnabled() then
+		return
 	end
+
+	ContextActionService:BindAction(
+		self._contextActionKey,
+		function(_actionName: string, userInputState: Enum.UserInputState, _inputObject: InputObject)
+			return self:_handleShortcut(userInputState)
+		end,
+		false,
+		unpack(shortcuts)
+	)
 end
 
 function BaseAction.GetData(self: BaseAction): ActionData
@@ -145,13 +174,10 @@ function BaseAction.GetData(self: BaseAction): ActionData
 end
 
 function BaseAction.ToggleActivate(self: BaseAction, ...): ()
-	self._activateData = { ... }
-
-	if self:IsEnabled() then
-		self.IsActivatedValue.Value = not self.IsActivatedValue.Value
+	if self.IsActivatedValue.Value then
+		self:Deactivate()
 	else
-		warn("[BaseAction.ToggleActivate] - Not activating, not enabled")
-		self.IsActivatedValue.Value = false
+		self:Activate(...)
 	end
 end
 
@@ -160,22 +186,26 @@ function BaseAction.IsActive(self: BaseAction): boolean
 end
 
 function BaseAction.Deactivate(self: BaseAction): ()
+	self._activateData = nil
 	self.IsActivatedValue.Value = false
 end
 
 function BaseAction.Activate(self: BaseAction, ...): ()
-	self._activateData = { ... }
-
-	if self:IsEnabled() then
-		self.IsActivatedValue.Value = true
-	else
+	if not self:IsEnabled() then
 		warn(string.format("[%s.Activate] - Not activating. Disabled!", self:GetName()))
+		return
 	end
+
+	if self.IsActivatedValue.Value then
+		return
+	end
+
+	self._activateData = { ... }
+	self.IsActivatedValue.Value = true
 end
 
 function BaseAction.Destroy(self: BaseAction): ()
 	self._maid:DoCleaning()
-
 	setmetatable(self :: any, nil)
 end
 
